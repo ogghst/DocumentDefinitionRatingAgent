@@ -33,15 +33,15 @@ load_dotenv()
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
 DEEPSEEK_API_BASE = os.getenv("DEEPSEEK_API_BASE")
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-OLLAMA_EMBED_MODEL = os.getenv("OLLAMA_EMBED_MODEL")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL")
 
 # --- Basic Validation ---
 if not DEEPSEEK_API_KEY:
     raise ValueError("DEEPSEEK_API_KEY environment variable not set.")
 if not DEEPSEEK_API_BASE:
     raise ValueError("DEEPSEEK_API_BASE environment variable not set.")
-if not OLLAMA_EMBED_MODEL:
-    raise ValueError("OLLAMA_EMBED_MODEL environment variable not set (e.g., 'nomic-embed-text').")
+if not OLLAMA_MODEL:
+    raise ValueError("OLLAMA_MODEL environment variable not set (e.g., 'phi4:14b').")
 
 
 
@@ -97,11 +97,11 @@ class GraphState(TypedDict):
 
 try:
 
-    print(f"Using Ollama Embeddings: model='{OLLAMA_EMBED_MODEL}', base_url='{OLLAMA_BASE_URL}'")
+    print(f"Using Ollama Embeddings: model='{OLLAMA_MODEL}', base_url='{OLLAMA_BASE_URL}'")
 
     # Initialize Ollama Embeddings
     embeddings = OllamaEmbeddings(
-        model=OLLAMA_EMBED_MODEL,
+        model=OLLAMA_MODEL,
         base_url=OLLAMA_BASE_URL
     )
     # Test embedding connection (optional but recommended)
@@ -120,10 +120,10 @@ try:
     #    max_tokens=1024, # Adjust as needed
     #)
 
-    print(f"Using Ollama LLM: model='{OLLAMA_EMBED_MODEL}', base_url='{OLLAMA_BASE_URL}'")
+    print(f"Using Ollama LLM: model='{OLLAMA_MODEL}', base_url='{OLLAMA_BASE_URL}'")
 
     llm = ChatOllama(
-        model=OLLAMA_EMBED_MODEL,
+        model=OLLAMA_MODEL,
         base_url=OLLAMA_BASE_URL,
         max_tokens=1024,
         temperature=0.0,
@@ -276,6 +276,8 @@ def analyze_check_rag(check_item: CheckItem, config: RunnableConfig) -> CheckRes
     --- START CONTEXT ---
     {context}
     --- END CONTEXT ---
+    
+    {additional_info}
 
     **Analysis Instructions:**
     1.  **Understand the Goal:** Read the Checklist Item Description carefully. What specific condition needs to be confirmed?
@@ -297,9 +299,42 @@ def analyze_check_rag(check_item: CheckItem, config: RunnableConfig) -> CheckRes
     {format_instructions}
     """
 
+    # --- Define Interactive Question Generation Prompt ---
+    question_prompt_template = """
+    You are a meticulous Project Compliance Analyst. You're reviewing a checklist item but need additional information to make a confident determination.
+
+    **Checklist Item Details:**
+    - ID: {check_id}
+    - Name: {check_name}
+    - Description: {check_description}
+    - Phase: {check_phase}
+
+    **Current Analysis Status:**
+    - Current reliability score: {current_reliability}%
+    - Current determination: {is_met_status}
+    - Current reasoning: {analysis_details}
+
+    **Document Evidence:**
+    {sources_summary}
+
+    Based on the above information, identify 1-3 specific questions that would help clarify whether this checklist item is met or not. Focus on questions that:
+    1. Target the precise information gaps in the document
+    2. Would significantly increase the reliability of your assessment
+    3. Are directly relevant to determining if the checklist item is satisfied
+
+    Format your response as a numbered list of questions only. Do not provide any additional text or explanations.
+    """
+
+    question_prompt = PromptTemplate(
+        template=question_prompt_template,
+        input_variables=["check_id", "check_name", "check_description", "check_phase", 
+                        "current_reliability", "is_met_status", "analysis_details", 
+                        "sources_summary"]
+    )
+
     prompt = PromptTemplate(
         template=prompt_template,
-        input_variables=["check_id", "check_name", "check_description", "check_phase", "context"],
+        input_variables=["check_id", "check_name", "check_description", "check_phase", "context", "additional_info"],
         partial_variables={"format_instructions": analysis_parser.get_format_instructions()}
     )
 
@@ -319,29 +354,74 @@ def analyze_check_rag(check_item: CheckItem, config: RunnableConfig) -> CheckRes
     )
 
     # --- Invoke Chain and Handle Results ---
-
     try:
         # Prepare input dictionary for the chain
-        chain_input = {
-            "check_id": check_item.id,
-            "check_name": check_item.name,
-            "check_description": check_item.description,
-            "check_phase": check_item.phase,
-        }
-        # Invoke the chain
-        result = rag_chain.invoke(chain_input, config=config) # Pass config for potential callbacks etc.
-
-        # Make sure to add the check_item AFTER parsing the LLM response
-        result.check_item = check_item  # Explicitly set the check_item here, not in the LLM output
-
-        # Apply human review logic based on reliability
+        additional_info = ""  # Start with no additional info
+        max_attempts = 3      # Maximum number of interactive attempts
+        attempt = 0
+        
+        while attempt < max_attempts:
+            # Prepare input dictionary for the chain
+            chain_input = {
+                "check_id": check_item.id,
+                "check_name": check_item.name,
+                "check_description": check_item.description,
+                "check_phase": check_item.phase,
+                "additional_info": additional_info
+            }
+            
+            # Invoke the chain
+            result = rag_chain.invoke(chain_input, config=config)
+            
+            # Make sure to add the check_item AFTER parsing the LLM response
+            result.check_item = check_item
+            
+            # Check if reliability is below threshold
+            if result.reliability < 50 and attempt < max_attempts - 1:
+                print(f"-> Check ID {check_item.id}: Reliability {result.reliability:.1f}% < 50%. Gathering more information...")
+                
+                # Generate questions for the user
+                sources_summary = "No relevant sources found in the document." if not result.sources else "\n".join(result.sources)
+                is_met_status = "Undetermined" if result.is_met is None else ("Met" if result.is_met else "Not Met")
+                
+                question_input = {
+                    "check_id": check_item.id,
+                    "check_name": check_item.name,
+                    "check_description": check_item.description,
+                    "check_phase": check_item.phase,
+                    "current_reliability": result.reliability,
+                    "is_met_status": is_met_status,
+                    "analysis_details": result.analysis_details,
+                    "sources_summary": sources_summary
+                }
+                
+                # Generate questions
+                questions = llm.invoke(question_prompt.format(**question_input)).content
+                print(f"\nNeed more information to evaluate this check. Please answer these questions:\n{questions}")
+                
+                # Get user input
+                print("\nEnter your responses (type 'skip' to continue without additional info):")
+                user_input = input("> ")
+                
+                if user_input.lower() == "skip":
+                    print("Skipping additional information gathering.")
+                    break
+                
+                # Add user input to additional info for next iteration
+                additional_info += f"\n\n**Additional Information (Attempt {attempt+1}):**\n{user_input}"
+                attempt += 1
+            else:
+                # Either reliability is good enough or we've reached max attempts
+                break
+                
+        # Apply human review logic based on reliability after all attempts
         if result.reliability < 50:
-            print(f"-> Check ID {check_item.id}: Reliability {result.reliability:.1f}% < 50%. Flagging for human review.")
+            print(f"-> Check ID {check_item.id}: Final reliability {result.reliability:.1f}% < 50%. Flagging for human review.")
             result.needs_human_review = True
         else:
-            print(f"-> Check ID {check_item.id}: Reliability {result.reliability:.1f}% >= 50%. Looks OK.")
+            print(f"-> Check ID {check_item.id}: Final reliability {result.reliability:.1f}% >= 50%. Looks OK.")
             result.needs_human_review = False
-
+            
         return result
     except OutputParserException as ope:
         print(f"ERROR parsing LLM output for check ID {check_item.id}: {ope}")

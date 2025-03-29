@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>RAG Conversation Client - Token Debug Version</title>
+    <style>
+        body {
+            font-family: monospace;
+            margin: 20px;
+        }
+        #messages {
+            border: 1px solid #ccc;
+            padding: 10px;
+            height: 400px;
+            overflow-y: scroll;
+            margin-bottom: 10px;
+            background-color: #f8f8f8;
+        }
+        #token-stream {
+            border: 1px solid #008000;
+            padding: 10px;
+            height: 200px;
+            overflow-y: scroll;
+            margin-bottom: 10px;
+            background-color: #f0fff0;
+            font-family: monospace;
+            white-space: pre-wrap;
+        }
+        .message {
+            border-bottom: 1px solid #eee;
+            padding: 5px 0;
+            margin-bottom: 5px;
+        }
+        .message-type {
+            font-weight: bold;
+            color: blue;
+        }
+        #controls {
+            margin-top: 10px;
+        }
+        button {
+            padding: 8px 16px;
+            margin-right: 5px;
+        }
+        input {
+            padding: 8px;
+            width: 300px;
+        }
+        .log-message {
+            margin: 4px 0;
+            border-radius: 4px;
+            font-size: 0.9em;
+        }
+        .input_request {
+            background-color: #e8eaf6;
+            border-left: 4px solid #3f51b5;
+            width: 100%;
+            font-weight: bold;
+            padding: 10px;
+            margin: 15px 0;
+            border-radius: 5px;
+            font-size: 1.1em;
+        }
+        .rag_waiting {
+            background-color: #fff8e1;
+            color: #ff8f00;
+            border: 1px dashed #ff8f00;
+            padding: 10px;
+            text-align: center;
+            margin: 10px 0;
+            font-weight: bold;
+            animation: pulseBorder 2s infinite;
+        }
+        @keyframes pulseBorder {
+            0% { border-color: #ff8f00; }
+            50% { border-color: #ffcc80; }
+            100% { border-color: #ff8f00; }
+        }
+        #inputResponseForm {
+            display: none;
+            border: 1px solid #3f51b5;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 15px 0;
+            background-color: #e8eaf6;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+    </style>
+</head>
+<body>
+    <h1>RAG Token Debug Client</h1>
+    
+    <div id="connection-status">Disconnected</div>
+    
+    <div id="setup">
+        <h3>Connect to Conversation</h3>
+        <input type="text" id="conversation-id" placeholder="Conversation ID">
+        <button id="connect-btn">Connect</button>
+        <button id="create-btn">Create New Conversation</button>
+        </div>
+    
+    <div id="conversation" style="display:none;">
+        <h3 id="conversation-title">Conversation</h3>
+        
+        <h4>Token Stream</h4>
+        <div id="token-stream"></div>
+        
+        <h4>Messages</h4>
+        <div id="messages"></div>
+        
+        <div id="controls">
+            <button id="start-btn">Start RAG Analysis</button>
+            <input type="text" id="message-input" placeholder="Type a message...">
+            <button id="send-btn">Send</button>
+    </div>
+    </div>
+    
+    <script>
+        // Debug client with explicit token handling
+        const API_URL = 'http://localhost:8765';
+        let socket = null;
+        let currentConversationId = null;
+        let tokenContent = '';
+        
+        const messagesDiv = document.getElementById('messages');
+        const tokenStreamDiv = document.getElementById('token-stream');
+        const statusDiv = document.getElementById('connection-status');
+        const conversationDiv = document.getElementById('conversation');
+        const setupDiv = document.getElementById('setup');
+        
+        // Connect to a conversation
+        async function connectToConversation(id) {
+            // Close any existing connection
+            if (socket) {
+                socket.close();
+            }
+            
+            try {
+                // Get conversation details
+                const response = await fetch(`${API_URL}/conversations/${id}`);
+                if (!response.ok) {
+                    throw new Error('Conversation not found');
+                }
+                
+                const conversation = await response.json();
+                currentConversationId = id;
+                
+                // Update UI
+                document.getElementById('conversation-title').textContent = 
+                    `Conversation: ${conversation.title} (ID: ${id})`;
+                conversationDiv.style.display = 'block';
+                setupDiv.style.display = 'none';
+                messagesDiv.innerHTML = '<div class="message">Connecting...</div>';
+                tokenStreamDiv.textContent = '';
+                tokenContent = '';
+                
+                // Connect WebSocket
+                socket = new WebSocket(`ws://localhost:8765/ws/${id}`);
+                
+                // Log all events for debugging
+                socket.onopen = (event) => {
+                    statusDiv.textContent = `Connected to conversation ${id}`;
+                    statusDiv.style.color = 'green';
+                    addSystemMessage('WebSocket connected');
+                };
+                
+                socket.onclose = (event) => {
+                    statusDiv.textContent = `Disconnected: Code ${event.code}`;
+                    statusDiv.style.color = 'red';
+                    addSystemMessage(`WebSocket closed: ${event.code} ${event.reason}`);
+                };
+                
+                socket.onerror = (error) => {
+                    statusDiv.textContent = 'WebSocket error';
+                    statusDiv.style.color = 'red';
+                    addSystemMessage('WebSocket error: ' + JSON.stringify(error));
+                };
+                
+                // Handle ALL messages with special handling for tokens
+                socket.onmessage = (event) => {
+                    const rawData = event.data;
+                    
+                    try {
+                        // Try to parse it as JSON
+                        const message = JSON.parse(rawData);
+                        
+                        // Process tokens with highest priority
+                        if (message.type === 'rag_token') {
+                            // Use requestAnimationFrame for smoother UI updates
+                            window.requestAnimationFrame(() => {
+                                handleToken(message.content);
+                            });
+                            return;
+                        }
+                        
+                        // Handle input requests
+                        if (message.type === 'input_request') {
+                            console.log('INPUT REQUEST:', message.content);
+                            showInputRequestForm(message.content);
+                            return;
+                        }
+                        
+                        // Check for waiting messages
+                        if (message.type === 'rag_progress' && 
+                            message.content.includes('Waiting for human input')) {
+                            // Add a special waiting indicator
+                            const waitingDiv = document.createElement('div');
+                            waitingDiv.className = 'message rag_waiting';
+                            waitingDiv.textContent = message.content;
+                            messagesDiv.appendChild(waitingDiv);
+                            scrollToBottom();
+                            return;
+                        }
+                        
+                        // For all other message types
+                        displayMessage(message);
+                    } catch (error) {
+                        // If parsing fails, it's a log message
+                        displayLogMessage(rawData);
+                    }
+                };
+            } catch (error) {
+                alert('Error: ' + error.message);
+            }
+        }
+        
+        // Streamlined token handler for better performance
+        function handleToken(token) {
+            // For debugging
+            console.log(`Token received: "${token}"`);
+            
+            // Update token content
+            tokenContent += token;
+            
+            // Use requestAnimationFrame for smooth updates
+            window.requestAnimationFrame(() => {
+                // Update display directly
+                tokenStreamDiv.textContent = tokenContent;
+                tokenStreamDiv.scrollTop = tokenStreamDiv.scrollHeight;
+            });
+            
+            // Display the individual token (optional)
+            const div = document.createElement('div');
+            div.className = 'token-marker';
+            div.style.display = 'inline-block';
+            div.style.color = 'green';
+            div.style.padding = '0 2px';
+            div.style.margin = '0 1px';
+            div.style.fontSize = '0.8em';
+            div.textContent = token;
+            
+            const tokenContainer = document.getElementById('token-debug') || 
+                (() => {
+                    const container = document.createElement('div');
+                    container.id = 'token-debug';
+                    container.style.display = 'none'; // Hide by default, toggle for debugging
+                    container.style.maxHeight = '100px';
+                    container.style.overflow = 'auto';
+                    container.style.border = '1px dashed green';
+                    container.style.padding = '5px';
+                    container.style.marginTop = '5px';
+                    document.body.appendChild(container);
+                    return container;
+                })();
+            
+            tokenContainer.appendChild(div);
+            tokenContainer.scrollTop = tokenContainer.scrollHeight;
+        }
+        
+        // Create a new conversation
+        async function createConversation() {
+            try {
+                const response = await fetch(`${API_URL}/conversations`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        title: 'Token Debug Conversation',
+                        checklist_path: 'checklists/project_checklist_demo.xlsx',
+                        document_path: 'input/quotation_demo.docx',
+                        target_phase: 'Apertura Commessa'
+                    })
+                });
+                
+                const data = await response.json();
+                document.getElementById('conversation-id').value = data.id;
+                alert(`Created conversation with ID: ${data.id}`);
+            } catch (error) {
+                alert('Error creating conversation: ' + error.message);
+            }
+        }
+        
+        // Start RAG analysis
+        async function startRagAnalysis() {
+            if (!currentConversationId) return;
+            
+            try {
+                document.getElementById('start-btn').disabled = true;
+                tokenContent = ''; // Reset token stream
+                tokenStreamDiv.textContent = '';
+                
+                await fetch(`${API_URL}/conversations/${currentConversationId}/start`, {
+                    method: 'POST'
+                });
+                
+                addSystemMessage('RAG analysis requested');
+            } catch (error) {
+                alert('Error starting RAG analysis: ' + error.message);
+                document.getElementById('start-btn').disabled = false;
+            }
+        }
+        
+        // Send a message
+        function sendMessage() {
+            if (!socket || socket.readyState !== WebSocket.OPEN) return;
+            
+            const input = document.getElementById('message-input');
+            const content = input.value.trim();
+            if (!content) return;
+            
+            // Send as JSON with type
+            socket.send(JSON.stringify({
+                type: 'user',
+                content: content
+            }));
+            
+            input.value = '';
+        }
+        
+        // Display a parsed JSON message
+        function displayMessage(message) {
+            const div = document.createElement('div');
+            div.className = 'message';
+            
+            // Create type label
+            const typeSpan = document.createElement('span');
+            typeSpan.className = 'message-type';
+            typeSpan.textContent = `[${message.type || 'unknown'}]`;
+            
+            // Create content container
+            const contentDiv = document.createElement('div');
+            
+            // Handle different content types
+            if (typeof message.content === 'string') {
+                contentDiv.textContent = message.content;
+            } else {
+                contentDiv.innerHTML = '<pre>' + JSON.stringify(message, null, 2) + '</pre>';
+            }
+            
+            // Add timestamp if available
+            if (message.timestamp) {
+                const time = new Date(message.timestamp).toLocaleTimeString();
+                div.title = time;
+            }
+            
+            div.appendChild(typeSpan);
+            div.appendChild(document.createTextNode(' '));
+            div.appendChild(contentDiv);
+            
+            messagesDiv.appendChild(div);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+        
+        // Display a log message with better formatting
+        function displayLogMessage(message) {
+            const div = document.createElement('div');
+            div.className = 'message log-message';
+            div.style.color = '#444';
+            div.style.backgroundColor = '#f0f0f0';
+            div.style.padding = '4px 8px';
+            div.style.borderLeft = '3px solid #888';
+            div.style.fontFamily = 'monospace';
+            div.style.whiteSpace = 'pre-wrap';
+            
+            const typeSpan = document.createElement('span');
+            typeSpan.className = 'message-type';
+            typeSpan.textContent = '[log]';
+            typeSpan.style.color = '#888';
+            
+            div.appendChild(typeSpan);
+            div.appendChild(document.createTextNode(' ' + message));
+            
+            messagesDiv.appendChild(div);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+        
+        // Add a system message (client-generated)
+        function addSystemMessage(content) {
+            const div = document.createElement('div');
+            div.className = 'message';
+            div.style.color = 'blue';
+            div.style.fontStyle = 'italic';
+            div.textContent = '* ' + content;
+            
+            messagesDiv.appendChild(div);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+        
+        // Handle input requests from the RAG system
+        function showInputRequestForm(message) {
+            // Display the input form
+            inputResponseForm.style.display = 'block';
+            
+            // Set a clear prompt
+            const promptElement = document.createElement('div');
+            promptElement.className = 'input-prompt';
+            promptElement.innerHTML = `<strong>RAG Analysis Paused:</strong> Please answer the following questions to continue:<br><br>${message}`;
+            
+            // Clear any previous prompt
+            const existingPrompt = inputResponseForm.querySelector('.input-prompt');
+            if (existingPrompt) {
+                existingPrompt.remove();
+            }
+            
+            // Add the new prompt before the textarea
+            inputResponseForm.insertBefore(promptElement, responseInput);
+            
+            // Focus the textarea for input
+            responseInput.focus();
+            
+            // Scroll to the input form
+            inputResponseForm.scrollIntoView({ behavior: 'smooth' });
+            
+            // Add visual indicator that system is waiting
+            const waitingIndicator = document.createElement('div');
+            waitingIndicator.className = 'message rag_waiting';
+            waitingIndicator.textContent = 'RAG Analysis Paused: Waiting for your input...';
+            messagesDiv.appendChild(waitingIndicator);
+            scrollToBottom();
+        }
+        
+        // Submit response for the input request
+        function submitResponse() {
+            if (!socket || socket.readyState !== WebSocket.OPEN) return;
+            
+            const content = responseInput.value.trim();
+            if (!content) {
+                // If empty, ask for confirmation before skipping
+                if (!confirm('You haven\'t entered any response. Do you want to skip this question?')) {
+                    return;
+                }
+            }
+            
+            // Send via WebSocket with the input_response type
+            socket.send(JSON.stringify({
+                type: 'input_response',
+                content: content || 'skip' 
+            }));
+            
+            // Add user's response to message history
+            const responseDiv = document.createElement('div');
+            responseDiv.className = 'message user';
+            responseDiv.innerHTML = `<strong>Your response:</strong><br>${content || '(skipped)'}`;
+            messagesDiv.appendChild(responseDiv);
+            
+            // Hide the input form and clear it
+            inputResponseForm.style.display = 'none';
+            responseInput.value = '';
+            
+            // Add a message that we've submitted
+            const submitDiv = document.createElement('div');
+            submitDiv.className = 'message system';
+            submitDiv.textContent = 'Response submitted. Waiting for RAG analysis to continue...';
+            messagesDiv.appendChild(submitDiv);
+            
+            scrollToBottom();
+        }
+        
+        // Event listeners
+        document.getElementById('connect-btn').addEventListener('click', () => {
+            const id = document.getElementById('conversation-id').value.trim();
+            if (id) connectToConversation(id);
+        });
+        
+        document.getElementById('create-btn').addEventListener('click', createConversation);
+        document.getElementById('start-btn').addEventListener('click', startRagAnalysis);
+        document.getElementById('send-btn').addEventListener('click', sendMessage);
+        
+        // Enter key for sending messages
+        document.getElementById('message-input').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                sendMessage();
+            }
+        });
+    </script>
+</body>
+</html>

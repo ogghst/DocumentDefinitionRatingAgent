@@ -6,6 +6,10 @@ from aioconsole import ainput
 # Context variable for active connections
 active_connections_var = contextvars.ContextVar('active_connections', default=set())
 
+# Dictionary to store references to active callback managers by conversation ID
+# This is just a declaration - it will be populated from websocket_server.py
+conversation_callbacks = {}
+
 # Shared functions for broadcasting and user input
 async def broadcast_message(message: str, target_connections: Optional[List] = None):
     """Send a message to specified connections or all active ones."""
@@ -25,39 +29,37 @@ async def broadcast_message(message: str, target_connections: Optional[List] = N
     else:
         print("[BROADCAST] No active connections, message only logged to console")
 
-async def get_user_input(prompt: str, connections: Optional[List] = None) -> str:
-    """Get input from the first available WebSocket client."""
-    target_connections = connections or list(active_connections_var.get())
+# The main get_user_input function that will be called from the workflow nodes
+async def get_user_input(prompt: str, conversation_id: Optional[str] = None) -> str:
+    """
+    Get input from a user.
     
-    if not target_connections:
-        print(prompt)
-        return input("> ")  # Fall back to console input if no connections
+    This is a generic function that can be called from anywhere in the codebase:
+    - If conversation_id is provided and a callback manager exists, it uses that
+    - If in a terminal environment, falls back to console input
     
-    # Send the prompt to all clients with a special marker for UI handling
-    input_request_message = f"INPUT_REQUEST:{prompt}"
-    await broadcast_message(input_request_message, target_connections)
+    Args:
+        prompt: The prompt to show the user
+        conversation_id: Optional conversation ID for websocket communication
+        
+    Returns:
+        The user's input as a string
+    """
+    # Try to use the callback manager if available
+    if conversation_id:
+        # Import only if conversation_id is provided
+        from websocket_server import conversation_callbacks
+        
+        if conversation_id in conversation_callbacks:
+            # Use the callback manager which will directly handle the websocket communication
+            return await conversation_callbacks[conversation_id].get_user_input(prompt)
+        else:
+            # No callback manager, but log that we were expecting one
+            print(f"No callback manager found for conversation {conversation_id}")
     
-    # Verify message was sent by logging confirmation
-    print(f"[DEBUG] Input request sent to {len(target_connections)} connections")
-    
-    # Wait for a response from any client
-    if target_connections:
-        first_connection = target_connections[0]
-        try:
-            # Send a heartbeat to ensure connection is active
-            await first_connection.send_text("PING")
-            
-            # Log waiting state
-            print("[DEBUG] Waiting for user input...")
-            
-            # Actually wait for response
-            response = await first_connection.receive_text()
-            print(f"[DEBUG] Received response: {response}")
-            return response
-        except Exception as e:
-            # Log specific exception
-            print(f"[ERROR] Exception while waiting for input: {type(e).__name__}: {str(e)}")
-            return "skip"
+    # Fall back to console input
+    print(f"\n[USER INPUT REQUIRED] {prompt}")
+    return await ainput("Your response: ")
 
 async def _wait_for_user_response(connection):
     """Continuously check for user response with async sleep"""

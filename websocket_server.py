@@ -11,6 +11,7 @@ from pydantic import BaseModel
 
 # Import from common module instead
 from common import broadcast_message, get_user_input, active_connections_var
+from websocket_callbacks import WebsocketCallbackManager  # Add this import
 
 # RAG imports - IMPORTANT: only import these when needed to avoid circular import
 from models import GraphState
@@ -44,6 +45,9 @@ class Conversation:
 
 # Store active conversations
 conversations: Dict[str, Conversation] = {}
+
+# Dictionary to store active callback managers
+conversation_callbacks: Dict[str, WebsocketCallbackManager] = {}
 
 # ---- Models for API requests ----
 class ConversationRequest(BaseModel):
@@ -169,80 +173,31 @@ async def run_rag_workflow(conversation_id: str, background_tasks: BackgroundTas
     # Import here to avoid circular imports
     from graph_nodes import create_workflow_graph
     from langchain_core.runnables import RunnableConfig
-    from langchain_core.callbacks.base import BaseCallbackHandler
     
     try:
         conversation = conversations[conversation_id]
         conversation.is_active = True
         
-        await broadcast_to_conversation(
-            conversation_id, 
-            "Starting RAG analysis...", 
-            "system",
-            rag_message=True  # Only send to owner
-        )
+        # Ensure we have an owner connection
+        if not conversation.owner_connection:
+            print(f"No owner connection for conversation {conversation_id}")
+            return
+            
+        # Send initial message directly to owner websocket
+        status_message = {
+            "type": "system",
+            "content": "Starting RAG analysis...",
+            "timestamp": datetime.now().isoformat()
+        }
+        await conversation.owner_connection.send_text(json.dumps(status_message))
         
-        # Create a proper callback handler class for broadcasting messages
-        class ConversationCallbackHandler(BaseCallbackHandler):
-            """Callback handler for sending messages to the conversation owner."""
-            
-            def __init__(self, conversation_id):
-                self.conversation_id = conversation_id
-                # Store a shared event loop reference
-                self.loop = asyncio.get_event_loop()
-                super().__init__()
-            
-            def _schedule_coroutine(self, coro):
-                """Simple helper to schedule a coroutine in the main event loop."""
-                if self.loop.is_running():
-                    self.loop.create_task(coro)
-                else:
-                    asyncio.run_coroutine_threadsafe(coro, self.loop)
-            
-            def on_llm_start(self, serialized, prompts, **kwargs):
-                """Run when LLM starts."""
-                # Simple scheduling for async function
-                self._schedule_coroutine(broadcast_to_conversation(
-                    self.conversation_id, 
-                    "LLM starting to generate...", 
-                    "rag_progress", 
-                    rag_message=True
-                ))
-                return super().on_llm_start(serialized, prompts, **kwargs)
-            
-            def on_llm_new_token(self, token, **kwargs):
-                """Run on new LLM token - simplified implementation."""
-                # Use the simplified helper to schedule the async send
-                self._schedule_coroutine(broadcast_to_conversation(
-                    self.conversation_id, token, "rag_token", rag_message=True
-                ))
-            
-            def on_chain_end(self, outputs, **kwargs):
-                """Run on chain end."""
-                self._schedule_coroutine(broadcast_to_conversation(
-                    self.conversation_id, 
-                    "Chain completed", 
-                    "rag_progress", 
-                    rag_message=True
-                ))
-            
-            def on_tool_end(self, output, **kwargs):
-                """Run on tool end."""
-                self._schedule_coroutine(broadcast_to_conversation(
-                    self.conversation_id,
-                    f"Tool completed", 
-                    "rag_progress", 
-                    rag_message=True
-                ))
-            
-            def on_text(self, text, **kwargs):
-                """Run on text."""
-                self._schedule_coroutine(broadcast_to_conversation(
-                    self.conversation_id, 
-                    text, 
-                    "rag_progress", 
-                    rag_message=True
-                ))
+        # Create and store the callback manager for this conversation
+        # Pass the owner's websocket connection directly
+        callback_manager = WebsocketCallbackManager(
+            conversation_id=conversation_id,
+            websocket=conversation.owner_connection
+        )
+        conversation_callbacks[conversation_id] = callback_manager
         
         # Create workflow graph
         app = create_workflow_graph()
@@ -257,7 +212,8 @@ async def run_rag_workflow(conversation_id: str, background_tasks: BackgroundTas
         # Configure and run graph with proper callback handler
         config = RunnableConfig(
             recursion_limit=25,
-            callbacks=[ConversationCallbackHandler(conversation_id)]
+            callbacks=[callback_manager],
+            metadata={"conversation_id": conversation_id}  # Include conversation_id in metadata
         )
         
         # Run the workflow
@@ -266,47 +222,63 @@ async def run_rag_workflow(conversation_id: str, background_tasks: BackgroundTas
         # Store the result
         conversation.workflow_result = final_state
         
-        # Send the final result
+        # Send the final result directly to the owner
         if final_state and final_state.get("final_results"):
-            results_json = json.dumps(final_state["final_results"])
-            await broadcast_to_conversation(
-                conversation_id, 
-                results_json, 
-                "rag_result",
-                rag_message=True  # Only send to owner
-            )
+            results_message = {
+                "type": "rag_result",
+                "content": json.dumps(final_state["final_results"]),
+                "timestamp": datetime.now().isoformat()
+            }
+            await conversation.owner_connection.send_text(json.dumps(results_message))
         elif final_state and final_state.get("error_message"):
-            await broadcast_to_conversation(
-                conversation_id, 
-                f"Error: {final_state['error_message']}", 
-                "error",
-                rag_message=True  # Only send to owner
-            )
+            error_message = {
+                "type": "error",
+                "content": f"Error: {final_state['error_message']}",
+                "timestamp": datetime.now().isoformat()
+            }
+            await conversation.owner_connection.send_text(json.dumps(error_message))
         else:
-            await broadcast_to_conversation(
-                conversation_id, 
-                "Analysis completed but no results were found", 
-                "warning",
-                rag_message=True  # Only send to owner
-            )
+            warning_message = {
+                "type": "warning",
+                "content": "Analysis completed but no results were found",
+                "timestamp": datetime.now().isoformat()
+            }
+            await conversation.owner_connection.send_text(json.dumps(warning_message))
     except Exception as e:
-        await broadcast_to_conversation(
-            conversation_id,
-            f"Error running RAG workflow: {str(e)}",
-            "error",
-            rag_message=True  # Only send to owner
-        )
+        print(f"Error running RAG workflow: {str(e)}")
+        # Try to send error message if we have a valid connection
+        if conversation_id in conversations and conversations[conversation_id].owner_connection:
+            try:
+                error_message = {
+                    "type": "error",
+                    "content": f"Error running RAG workflow: {str(e)}",
+                    "timestamp": datetime.now().isoformat()
+                }
+                await conversations[conversation_id].owner_connection.send_text(json.dumps(error_message))
+            except Exception as send_error:
+                print(f"Error sending error message: {send_error}")
     finally:
         # Mark conversation as inactive
         if conversation_id in conversations:
             conversations[conversation_id].is_active = False
+        
+        # Deactivate and clean up callback manager
+        if conversation_id in conversation_callbacks:
+            conversation_callbacks[conversation_id].deactivate()
+            conversation_callbacks.pop(conversation_id, None)
 
+# Update get_user_input to use the callback manager if available
 async def get_user_input(conversation_id: str, prompt: str) -> str:
     """Get input from the owner of a conversation.
     
     This function sends a prompt to the conversation owner and waits for a response.
     The RAG workflow will pause here until a response is received or the timeout occurs.
     """
+    # If we have a callback manager for this conversation, use it
+    if conversation_id in conversation_callbacks:
+        return await conversation_callbacks[conversation_id].get_user_input(prompt)
+    
+    # Otherwise, fall back to the original implementation
     if conversation_id not in conversations:
         print(f"Conversation {conversation_id} not found")
         return "skip"
@@ -526,14 +498,31 @@ async def websocket_endpoint(websocket: WebSocket, conversation_id: str):
         await websocket.close(code=1008, reason="Conversation not found")
         return
     
-    # Try to optimize the connection
+    # Try to optimize the connection - this is optional and may not work on all WebSocket implementations
     try:
-        socket = websocket._transport._sock
-        socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-        print(f"TCP_NODELAY enabled for connection")
-    except Exception:
-        # Non-critical, so just continue if this fails
-        pass
+        # Different WebSocket implementations may have different attribute structures
+        # Try several common patterns
+        if hasattr(websocket, '_transport') and hasattr(websocket._transport, '_sock'):
+            # FastAPI/Starlette WebSocket with direct transport access
+            socket = websocket._transport._sock
+            socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+            print("TCP_NODELAY enabled via _transport._sock")
+        elif hasattr(websocket, 'raw_socket'):
+            # Direct socket access
+            socket = websocket.raw_socket
+            socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+            print("TCP_NODELAY enabled via raw_socket")
+        elif hasattr(websocket, 'socket'):
+            # Alternative direct socket access
+            socket = websocket.socket
+            socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+            print("TCP_NODELAY enabled via socket")
+        else:
+            # No known socket access method - skip optimization
+            print("TCP_NODELAY not enabled - no known socket access method")
+    except Exception as e:
+        # Non-critical, so just log and continue if this fails
+        print(f"Note: Could not enable TCP_NODELAY on WebSocket: {e}")
     
     # Accept the connection
     try:
@@ -563,46 +552,74 @@ async def websocket_endpoint(websocket: WebSocket, conversation_id: str):
         for message in conversations[conversation_id].messages:
             await websocket.send_text(json.dumps(message))
         
+        # If this is the owner, update the websocket reference in any existing callback manager
+        if is_owner and conversation_id in conversation_callbacks:
+            conversation_callbacks[conversation_id].set_websocket(websocket)
+        
         # Main message loop
         while True:
             message = await websocket.receive_text()
             
-            # Process the message
+            # If this is the owner and there's an active callback manager waiting for input,
+            # forward the message to the callback manager
+            if is_owner and conversation_id in conversation_callbacks:
+                callback_manager = conversation_callbacks[conversation_id]
+                callback_manager.handle_user_message(message)
+            
+            # Process the message for the chat functionality
             try:
                 # Try to parse as JSON
                 data = json.loads(message)
                 if isinstance(data, dict) and "type" in data:
                     if data["type"] == "user" and "content" in data:
-                        # User message - send to everyone (chat functionality)
-                        await broadcast_to_conversation(
-                            conversation_id, 
-                            data["content"], 
-                            "user"
-                        )
+                        # User message - create a message record and add to history
+                        message_data = {
+                            "type": "user",
+                            "content": data["content"],
+                            "timestamp": datetime.now().isoformat()
+                        }
+                        conversations[conversation_id].messages.append(message_data)
+                        
+                        # Send to all connections in this conversation
+                        for conn in conversations[conversation_id].connections:
+                            try:
+                                await conn.send_text(json.dumps(message_data))
+                            except Exception as e:
+                                print(f"Error sending to connection: {e}")
                     elif data["type"] == "input_response" and "content" in data:
                         # This message is a response to an input request
-                        # The actual handling happens in the get_user_input function
-                        # where it's waiting for a message from this connection
+                        # The actual handling happens via the callback manager
                         print(f"Input response received in conversation {conversation_id}")
-                        
-                        # We don't need to do anything special here because
-                        # the get_user_input function is directly listening for
-                        # messages on this WebSocket connection
-                        pass
                 else:
                     # Unstructured JSON message - treat as user message
-                    await broadcast_to_conversation(
-                        conversation_id, 
-                        message, 
-                        "user"
-                    )
+                    message_data = {
+                        "type": "user",
+                        "content": message,
+                        "timestamp": datetime.now().isoformat()
+                    }
+                    conversations[conversation_id].messages.append(message_data)
+                    
+                    # Send to all connections in this conversation
+                    for conn in conversations[conversation_id].connections:
+                        try:
+                            await conn.send_text(json.dumps(message_data))
+                        except Exception as e:
+                            print(f"Error sending to connection: {e}")
             except json.JSONDecodeError:
                 # Plain text - treat as user message
-                await broadcast_to_conversation(
-                    conversation_id, 
-                    message, 
-                    "user"
-                )
+                message_data = {
+                    "type": "user",
+                    "content": message,
+                    "timestamp": datetime.now().isoformat()
+                }
+                conversations[conversation_id].messages.append(message_data)
+                
+                # Send to all connections in this conversation
+                for conn in conversations[conversation_id].connections:
+                    try:
+                        await conn.send_text(json.dumps(message_data))
+                    except Exception as e:
+                        print(f"Error sending to connection: {e}")
     except WebSocketDisconnect:
         print(f"WebSocket disconnected from conversation {conversation_id}")
     except Exception as e:

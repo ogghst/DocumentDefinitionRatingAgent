@@ -90,14 +90,15 @@ def create_rag_chain():
     print(f"Input variables: {analysis_prompt.input_variables}")
     print(f"Partial variables: {analysis_prompt.partial_variables}")    
     print(f"Format instructions: {analysis_parser.get_format_instructions()}")
-       
     
+    # This chain preserves streaming capabilities through the entire chain
+    # The streaming happens via the callback manager that will be provided in the RunnableConfig
     rag_chain = (
         RunnablePassthrough.assign(
             context=lambda x: format_docs(x["retriever"].invoke(x["check_description"]))
         )
         | analysis_prompt
-        | llm
+        | llm  # streaming=True is already set in the llm instance
         | analysis_parser
     )
     
@@ -112,12 +113,13 @@ def create_streaming_chain():
     )
     
     # This chain only includes prompt + LLM without parsing
+    # Streaming happens via the callback manager provided in the RunnableConfig
     streaming_chain = (
         RunnablePassthrough.assign(
             context=lambda x: format_docs(x["retriever"].invoke(x["check_description"]))
         )
         | analysis_prompt
-        | llm  # No parser here - just raw LLM output with tokens
+        | llm  # streaming=True is already set in the llm instance
     )
     
     return streaming_chain

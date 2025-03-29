@@ -139,6 +139,24 @@ async def analyze_check_rag(check_item: CheckItem, config: RunnableConfig) -> Ch
     state: GraphState = config['configurable']
     retriever = state.get('retriever')
     
+    # Get conversation ID from the config if available for user input
+    conversation_id = None
+    callback_manager = None
+    
+    # Extract conversation_id from metadata
+    if config.get('metadata') and isinstance(config['metadata'], dict):
+        conversation_id = config['metadata'].get('conversation_id')
+        
+        # If we have a conversation_id, try to get the callback manager
+        if conversation_id:
+            try:
+                from websocket_server import conversation_callbacks
+                callback_manager = conversation_callbacks.get(conversation_id)
+                if callback_manager:
+                    print(f"Using callback manager for conversation {conversation_id}")
+            except (ImportError, Exception) as e:
+                print(f"Could not access callback manager: {e}")
+    
     # Pre-computation checks
     if not retriever:
         await broadcast_message(f"ERROR: Retriever not available for check ID {check_item.id}. Skipping analysis.")
@@ -157,9 +175,6 @@ async def analyze_check_rag(check_item: CheckItem, config: RunnableConfig) -> Ch
         max_attempts = 3
         attempt = 0
         
-        # First run a streaming version to get tokens flowing to the UI
-        # streaming_chain = create_streaming_chain()
-        
         while attempt < max_attempts:
             # Prepare chain input
             chain_input = {
@@ -171,46 +186,72 @@ async def analyze_check_rag(check_item: CheckItem, config: RunnableConfig) -> Ch
                 "retriever": retriever
             }
             
-            # Run streaming chain first (tokens will flow to UI)
-            # await broadcast_message(f"Starting streaming analysis for check: {check_item.name}")
-            # _ = await streaming_chain.ainvoke(chain_input, config=config)
-            
             # Now run the actual chain with parser for structured results
             result = await rag_chain.ainvoke(chain_input, config=config)
             
             # Add check_item back (it's not included in the LLM output)
             result.check_item = check_item
             
-            # Check if reliability is below threshold
-            if result.reliability < 50 and attempt < max_attempts - 1:
-                await broadcast_message(f"-> Check ID {check_item.id}: Reliability {result.reliability:.1f}% < 50%. Gathering more information...")
+            # Decide if we need human review
+            if result.reliability < 50:
+                result.needs_human_review = True
+                await broadcast_message(f"Low reliability for check ID {check_item.id}: {result.reliability}%")
                 
-                # Generate questions for the user
+                # Ask if the user wants to continue or provide more info
                 questions = generate_questions(check_item, result)
-                questions_message = f"\nNeed more information to evaluate this check. Please answer these questions:\n{questions}"
                 
-                # Get user input via WebSocket
-                user_input = await get_user_input(questions_message + "\n\nEnter your responses (type 'skip' to continue without additional info):")
+                user_prompt = f"""
+                This check has low reliability ({result.reliability}% < 50%).
                 
-                if user_input.lower() == "skip":
-                    await broadcast_message("Skipping additional information gathering.")
+                Check ID: {check_item.id}
+                Check Description: {check_item.description}
+                Current Analysis: {result.analysis_details}
+                
+                Suggested questions:
+                {questions}
+                
+                Would you like to:
+                1. Accept the low-reliability result and continue
+                2. Try to improve the result with more information
+                
+                Enter 1 or 2, or provide specific information about this check:
+                """
+                
+                # Try to use the callback manager for user input first (direct websocket)
+                if callback_manager:
+                    user_response = await callback_manager.get_user_input(user_prompt)
+                else:
+                    # Fallback to standard get_user_input (might use websocket or console)
+                    user_response = await get_user_input(user_prompt, conversation_id)
+                
+                if user_response in ["1", "skip", "continue", "accept"]:
+                    await broadcast_message(f"User chose to accept the current result for check ID {check_item.id}")
                     break
-                
-                # Add user input to additional info for next iteration
-                additional_info += f"\n\n**Additional Information (Attempt {attempt+1}):**\n{user_input}"
-                attempt += 1
+                elif user_response in ["2", "improve"]:
+                    await broadcast_message(f"User chose to provide more information...")
+                    
+                    # Get the specific information
+                    info_prompt = "Please provide additional information about this check item:"
+                    if callback_manager:
+                        additional_info = await callback_manager.get_user_input(info_prompt)
+                    else:
+                        additional_info = await get_user_input(info_prompt, conversation_id)
+                    
+                    # Add to the context for the next attempt
+                    await broadcast_message(f"Retrying analysis with additional information...")
+                    attempt += 1
+                    continue
+                else:
+                    # User provided specific information
+                    additional_info = user_response
+                    await broadcast_message(f"Retrying analysis with user information...")
+                    attempt += 1
+                    continue
             else:
-                # Reliability is good enough or we've reached max attempts
+                # Good reliability, finish here
                 break
         
-        # Set human review flag based on final reliability
-        if result.reliability < 50:
-            await broadcast_message(f"-> Check ID {check_item.id}: Final reliability {result.reliability:.1f}% < 50%. Flagging for human review.")
-            result.needs_human_review = True
-        else:
-            await broadcast_message(f"-> Check ID {check_item.id}: Final reliability {result.reliability:.1f}% >= 50%. Looks OK.")
-            result.needs_human_review = False
-            
+        # Final result with proper determination
         return result
     except Exception as e:
         await broadcast_message(f"ERROR during RAG analysis for check ID {check_item.id}: {e}")

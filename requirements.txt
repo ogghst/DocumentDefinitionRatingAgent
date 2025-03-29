@@ -1,0 +1,9 @@
+fastapi>=0.95.2
+uvicorn>=0.22.0
+langchain>=0.0.200
+langgraph>=0.0.1
+pydantic>=1.10.7
+ollama>=0.0.1
+pandas>=1.5.3
+websockets>=10.4
+python-dotenv>=0.21.1 

@@ -5,16 +5,17 @@ from typing_extensions import Annotated, TypedDict
 class CheckItem(BaseModel):
     """Represents a single checklist item for a specific phase."""
     id: int = Field(..., description="Unique identifier for the check.")
-    name: str = Field(..., description="Short name or title of the check.")
-    branch_id: int = Field(..., description="Identifier for the check's branch/topic.")
-    branch_name: str = Field(..., description="Name of the check's branch/topic.")
-    description: str = Field(..., description="Detailed description of the check to be performed.")
-    weight: int = Field(..., description="Weight or importance of the check for this phase.")
-    phase: str = Field(..., description="The project phase this check instance belongs to.")
+    name: Optional[str] = Field(..., description="Short name or title of the check.")
+    branch_id: Optional[int] = Field(..., description="Identifier for the check's branch/topic.")
+    branch_name: Optional[str] = Field(..., description="Name of the check's branch/topic.")
+    description: Optional[str] = Field(..., description="Detailed description of the check to be performed.")
+    weight: Optional[int] = Field(..., description="Weight or importance of the check for this phase.")
+    phase: Optional[str] = Field(..., description="The project phase this check instance belongs to.")
 
 class CheckResult(BaseModel):
     """Represents the analysis result for a single check item based on document review."""
     check_item: Optional[CheckItem] = Field(None, description="The original checklist item being analyzed. Can be None if parsing fails early.")
+    #check_item_id: int = Field(..., description="Unique identifier for the check.")   
     is_met: Optional[bool] = Field(None, description="True if the document confirms the check is met, False if it's not met or evidence is missing/unclear.")
     reliability: float = Field(..., ge=0.0, le=100.0, description="Confidence score (0-100) that the 'is_met' field is correct based *only* on the provided document context. High score requires direct, unambiguous evidence.")
     sources: List[str] = Field(default_factory=list, description="Specific sentences or passages from the document context that directly support the 'is_met' conclusion and reliability score. Should be exact quotes.")

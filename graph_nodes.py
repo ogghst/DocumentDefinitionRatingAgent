@@ -158,7 +158,7 @@ async def analyze_check_rag(check_item: CheckItem, config: RunnableConfig) -> Ch
         attempt = 0
         
         # First run a streaming version to get tokens flowing to the UI
-        streaming_chain = create_streaming_chain()
+        # streaming_chain = create_streaming_chain()
         
         while attempt < max_attempts:
             # Prepare chain input
@@ -172,8 +172,8 @@ async def analyze_check_rag(check_item: CheckItem, config: RunnableConfig) -> Ch
             }
             
             # Run streaming chain first (tokens will flow to UI)
-            await broadcast_message(f"Starting streaming analysis for check: {check_item.name}")
-            _ = await streaming_chain.ainvoke(chain_input, config=config)
+            # await broadcast_message(f"Starting streaming analysis for check: {check_item.name}")
+            # _ = await streaming_chain.ainvoke(chain_input, config=config)
             
             # Now run the actual chain with parser for structured results
             result = await rag_chain.ainvoke(chain_input, config=config)
@@ -214,6 +214,9 @@ async def analyze_check_rag(check_item: CheckItem, config: RunnableConfig) -> Ch
         return result
     except Exception as e:
         await broadcast_message(f"ERROR during RAG analysis for check ID {check_item.id}: {e}")
+        await broadcast_message(f"RAG Chain Error: {str(e)}")
+        await broadcast_message(f"Input used: {chain_input}")
+        await broadcast_message(f"CheckItem data: {check_item.model_dump()}")
         traceback.print_exc()
         return CheckResult(
             check_item=check_item, is_met=None, reliability=0.0, sources=[],

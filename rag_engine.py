@@ -85,6 +85,12 @@ def create_rag_chain():
         input_variables=["check_id", "check_name", "check_description", "check_phase", "context", "additional_info"],
         partial_variables={"format_instructions": analysis_parser.get_format_instructions()}
     )
+
+    print(f"Prompt template: {analysis_prompt.template}")
+    print(f"Input variables: {analysis_prompt.input_variables}")
+    print(f"Partial variables: {analysis_prompt.partial_variables}")    
+    print(f"Format instructions: {analysis_parser.get_format_instructions()}")
+       
     
     rag_chain = (
         RunnablePassthrough.assign(

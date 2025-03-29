@@ -5,3 +5,6 @@ checklists/
 input/
 output/
 __pycache__/
+.env
+dev/
+old/

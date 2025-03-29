@@ -6,45 +6,27 @@ A WebSocket-based conversation server for Retrieval-Augmented Generation (RAG) a
 
 This system enables real-time document analysis against structured checklists, with a focus on project compliance validation. Key features include:
 
--   Real-time token streaming from LLM responses
-
--   WebSocket-based client-server communication
-
--   Human-in-the-loop workflow for uncertain analyses
-
--   Conversation management with support for multiple concurrent sessions
-
--   Document retrieval and embedding for semantic search
+- Real-time token streaming from LLM responses
+- WebSocket-based client-server communication
+- Human-in-the-loop workflow for uncertain analyses
+- Conversation management with support for multiple concurrent sessions
+- Document retrieval and embedding for semantic search
 
 ## 🏗️ Architecture
 
 The application follows a modular architecture with these main components:
 
-text
-
-Apply
-
-┌──────────────┐ ┌──────────────┐ ┌──────────────┐
-
-│ Client │◄────►│ WebSocket │◄────►│ RAG Workflow │
-
-│ (Browser) │ │ Server │ │ Engine │
-
-└──────────────┘ └──────────────┘ └──────────────┘
-
-▲ ▲
-
-│ │
-
-▼ ▼
-
-┌──────────────┐ ┌──────────────┐
-
-│ Conversation │ │ Document │
-
-│ Management │ │ Processing │
-
-└──────────────┘ └──────────────┘
+┌──────────────┐      ┌──────────────┐      ┌──────────────┐
+│   Client     │◄────►│  WebSocket   │◄────►│ RAG Workflow │
+│  (Browser)   │      │    Server    │      │    Engine    │
+└──────────────┘      └──────────────┘      └──────────────┘
+                             ▲                     ▲
+                             │                     │
+                             ▼                     ▼
+                      ┌──────────────┐     ┌──────────────┐
+                      │ Conversation │     │   Document   │
+                      │  Management  │     │  Processing  │
+                      └──────────────┘     └──────────────┘
 
 ### Components
 
@@ -224,14 +206,11 @@ Apply
 Run
 
 # Run the server with auto-reload
-
-uvicorn  websocket_server:app  --reload  --port  8765
+uvicorn websocket_server:app --reload --port 8765
 
 # Create a virtual environment
-
-python  -m  venv  venv
-
-source  venv/bin/activate  # On Windows: venv\Scripts\activate
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
 
 ## 📄 License
 

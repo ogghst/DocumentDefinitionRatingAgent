@@ -107,11 +107,18 @@
         <h4>Messages</h4>
         <div id="messages"></div>
         
+        <div id="inputResponseForm">
+            <textarea id="responseInput" rows="5" style="width: 100%; margin-top: 10px;" placeholder="Enter your response here..."></textarea>
+            <div style="margin-top: 10px;">
+                <button id="submitResponseBtn">Submit Response</button>
+            </div>
+        </div>
+        
         <div id="controls">
             <button id="start-btn">Start RAG Analysis</button>
             <input type="text" id="message-input" placeholder="Type a message...">
             <button id="send-btn">Send</button>
-    </div>
+        </div>
     </div>
     
     <script>
@@ -196,6 +203,17 @@
                         if (message.type === 'input_request') {
                             console.log('INPUT REQUEST:', message.content);
                             showInputRequestForm(message.content);
+                            return;
+                        }
+                        
+                        // Handle errors
+                        if (message.type === 'error') {
+                            const errorDiv = document.createElement('div');
+                            errorDiv.className = 'message error';
+                            errorDiv.style.color = 'red';
+                            errorDiv.textContent = `Error: ${message.content}`;
+                            messagesDiv.appendChild(errorDiv);
+                            scrollToBottom();
                             return;
                         }
                         
@@ -473,6 +491,7 @@
         document.getElementById('create-btn').addEventListener('click', createConversation);
         document.getElementById('start-btn').addEventListener('click', startRagAnalysis);
         document.getElementById('send-btn').addEventListener('click', sendMessage);
+        document.getElementById('submitResponseBtn').addEventListener('click', submitResponse);
         
         // Enter key for sending messages
         document.getElementById('message-input').addEventListener('keypress', (e) => {
@@ -480,6 +499,19 @@
                 sendMessage();
             }
         });
+        
+        // Enter key for submitting responses
+        document.getElementById('responseInput').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter' && e.ctrlKey) {
+                submitResponse();
+                e.preventDefault();
+            }
+        });
+        
+        // Helper function to scroll messages to bottom
+        function scrollToBottom() {
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
     </script>
 </body>
 </html>

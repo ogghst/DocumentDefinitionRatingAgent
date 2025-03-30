@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 # Import from common module instead
-from common import broadcast_message, get_user_input, active_connections_var
+from common import broadcast_message, get_user_input, active_connections_var, queue_message
 from websocket_callbacks import WebsocketCallbackManager  # Add this import
 
 # RAG imports - IMPORTANT: only import these when needed to avoid circular import
@@ -565,6 +565,13 @@ async def websocket_endpoint(websocket: WebSocket, conversation_id: str):
             if is_owner and conversation_id in conversation_callbacks:
                 callback_manager = conversation_callbacks[conversation_id]
                 callback_manager.handle_user_message(message)
+            
+            # Try to queue the message for any waiting input requests
+            message_processed = queue_message(websocket, message)
+            
+            # If the message was processed as an input response, we're done
+            if message_processed:
+                continue
             
             # Process the message for the chat functionality
             try:

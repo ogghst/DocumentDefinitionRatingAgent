@@ -125,9 +125,35 @@ def create_streaming_chain():
     return streaming_chain
 
 def generate_questions(check_item: CheckItem, result: CheckResult) -> str:
-    """Generate follow-up questions to improve reliability."""
+    """Generate specific follow-up questions to improve reliability."""
     question_prompt = PromptTemplate(
-        template=question_prompt_template,
+        template="""
+You are a Project Compliance Analyst Assistant. You need to generate specific, focused questions to gather information about a checklist item with low reliability.
+
+**Checklist Item Details:**
+- ID: {check_id}
+- Name: {check_name}
+- Description: {check_description}
+- Phase: {check_phase}
+
+**Current Analysis Status:**
+- Current reliability score: {current_reliability}%
+- Current determination: {is_met_status}
+- Current reasoning: {analysis_details}
+
+**Document Evidence:**
+{sources_summary}
+
+Generate 1-3 specific, targeted questions that would help increase reliability. The questions MUST:
+1. Focus on precise details that are missing from the document
+2. Ask for exact information directly related to confirming the checklist item
+3. Be answerable by a project manager with access to additional documentation
+
+DO NOT ask generic questions like "Can you provide more information?" or "Is there any additional context?".
+Instead, ask for specific measurements, confirmations, document references, or concrete details.
+
+Format your response as a numbered list of questions only. Do not provide any additional text or explanations.
+""",
         input_variables=[
             "check_id", "check_name", "check_description", "check_phase", 
             "current_reliability", "is_met_status", "analysis_details", 

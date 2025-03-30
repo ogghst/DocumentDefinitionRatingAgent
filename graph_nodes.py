@@ -174,6 +174,8 @@ async def analyze_check_rag(check_item: CheckItem, config: RunnableConfig) -> Ch
         additional_info = ""
         max_attempts = 3
         attempt = 0
+        user_provided_input = False  # Track if the user has already provided input
+        prev_reliability = 0  # Track previous reliability score
         
         while attempt < max_attempts:
             # Prepare chain input
@@ -192,64 +194,95 @@ async def analyze_check_rag(check_item: CheckItem, config: RunnableConfig) -> Ch
             # Add check_item back (it's not included in the LLM output)
             result.check_item = check_item
             
-            # Decide if we need human review
-            if result.reliability < 50:
-                result.needs_human_review = True
-                await broadcast_message(f"Low reliability for check ID {check_item.id}: {result.reliability}%")
-                
-                # Ask if the user wants to continue or provide more info
-                questions = generate_questions(check_item, result)
-                
-                user_prompt = f"""
-                This check has low reliability ({result.reliability}% < 50%).
-                
-                Check ID: {check_item.id}
-                Check Description: {check_item.description}
-                Current Analysis: {result.analysis_details}
-                
-                Suggested questions:
-                {questions}
-                
-                Would you like to:
-                1. Accept the low-reliability result and continue
-                2. Try to improve the result with more information
-                
-                Enter 1 or 2, or provide specific information about this check:
-                """
-                
-                # Try to use the callback manager for user input first (direct websocket)
-                if callback_manager:
-                    user_response = await callback_manager.get_user_input(user_prompt)
-                else:
-                    # Fallback to standard get_user_input (might use websocket or console)
-                    user_response = await get_user_input(user_prompt, conversation_id)
-                
-                if user_response in ["1", "skip", "continue", "accept"]:
-                    await broadcast_message(f"User chose to accept the current result for check ID {check_item.id}")
-                    break
-                elif user_response in ["2", "improve"]:
-                    await broadcast_message(f"User chose to provide more information...")
-                    
-                    # Get the specific information
-                    info_prompt = "Please provide additional information about this check item:"
-                    if callback_manager:
-                        additional_info = await callback_manager.get_user_input(info_prompt)
-                    else:
-                        additional_info = await get_user_input(info_prompt, conversation_id)
-                    
-                    # Add to the context for the next attempt
-                    await broadcast_message(f"Retrying analysis with additional information...")
-                    attempt += 1
-                    continue
-                else:
-                    # User provided specific information
-                    additional_info = user_response
-                    await broadcast_message(f"Retrying analysis with user information...")
-                    attempt += 1
-                    continue
-            else:
-                # Good reliability, finish here
+            # Check if reliability has improved from the previous attempt
+            reliability_improved = result.reliability > prev_reliability
+            
+            # Only check for human review if:
+            # 1. This is the first attempt, OR
+            # 2. User hasn't provided input yet, OR
+            # 3. Reliability has significantly improved from the previous attempt
+            needs_human_input = (
+                result.reliability < 50 and 
+                (attempt == 0 or not user_provided_input or reliability_improved)
+            )
+            
+            # If we're not making progress with reliability, or user already provided input 
+            # and reliability is still low, don't ask again
+            if not needs_human_input:
+                # Accept the result even if reliability is low
+                # Mark as needing human review in the final results if reliability < 50
+                if result.reliability < 50:
+                    result.needs_human_review = True
+                    await broadcast_message(f"Low reliability for check ID {check_item.id}: {result.reliability}%. Accepting result without further user input.")
                 break
+                
+            # Update previous reliability score
+            prev_reliability = result.reliability
+            
+            # We need human review
+            result.needs_human_review = True
+            await broadcast_message(f"Low reliability for check ID {check_item.id}: {result.reliability}%")
+            
+            # Ask if the user wants to continue or provide more info
+            questions = generate_questions(check_item, result)
+            
+            user_prompt = f"""
+# Low Reliability Assessment for Check #{check_item.id}
+
+The system cannot confidently determine if this check is met based on the document.
+
+## Check Details:
+- ID: {check_item.id}
+- Name: {check_item.name}
+- Description: {check_item.description}
+- Current Reliability: {result.reliability}%
+
+## Current Assessment:
+{result.analysis_details}
+
+## To resolve this, please answer one of these specific questions:
+{questions}
+
+## Options:
+1. Accept the current assessment (low reliability) and continue to the next check
+2. Provide specific information to improve the assessment
+
+Enter "1" to accept and continue, or type your answer to the question(s) above:
+"""
+            
+            # Try to use the callback manager for user input first (direct websocket)
+            if callback_manager:
+                user_response = await callback_manager.get_user_input(user_prompt)
+            else:
+                # Fallback to standard get_user_input (might use websocket or console)
+                user_response = await get_user_input(user_prompt, conversation_id)
+            
+            # Mark that user provided input
+            user_provided_input = True
+            
+            if user_response in ["1", "skip", "continue", "accept"]:
+                await broadcast_message(f"User chose to accept the current result for check ID {check_item.id}")
+                break
+            elif user_response in ["2", "improve"]:
+                await broadcast_message(f"User chose to provide more information...")
+                
+                # Get the specific information
+                info_prompt = "Please provide additional information about this check item:"
+                if callback_manager:
+                    additional_info = await callback_manager.get_user_input(info_prompt)
+                else:
+                    additional_info = await get_user_input(info_prompt, conversation_id)
+                
+                # Add to the context for the next attempt
+                await broadcast_message(f"Retrying analysis with additional information...")
+                attempt += 1
+                continue
+            else:
+                # User provided specific information
+                additional_info = user_response
+                await broadcast_message(f"Retrying analysis with user information...")
+                attempt += 1
+                continue
         
         # Final result with proper determination
         return result

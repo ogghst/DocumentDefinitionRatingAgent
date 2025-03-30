@@ -1,9 +1,36 @@
-fastapi>=0.95.2
-uvicorn>=0.22.0
-langchain>=0.0.200
-langgraph>=0.0.1
-pydantic>=1.10.7
-ollama>=0.0.1
-pandas>=1.5.3
-websockets>=10.4
-python-dotenv>=0.21.1 
+fastapi>=0.95.2 # FastAPI framework for building APIs
+uvicorn>=0.22.0 # ASGI server implementation
+langchain>=0.0.200 # LangChain framework for building LLM applications
+langgraph>=0.0.1 # LangGraph framework for building stateful workflows
+pydantic>=1.10.7 # Data validation and settings management using Pydantic
+ollama>=0.0.1 # Ollama model server
+pandas>=1.5.3 # Data manipulation and analysis
+websockets>=10.4 # WebSocket implementation
+python-dotenv>=0.21.1 # Environment variable management
+langchain-ollama>=0.0.1 # Ollama integration for LangChain
+langchain-deepseek>=0.0.1 # DeepSeek integration for LangChain
+
+# Core dependencies
+openpyxl>=3.1.0  # For Excel file handling in graph_nodes.py
+python-docx>=0.8.11  # For Word doc handling in document_processor
+asyncio>=3.4.3  # Used in websocket callbacks and graph_nodes.py for async operations
+aiohttp>=3.8.0  # Common dependency for async HTTP requests
+starlette>=0.27.0  # WebSocket dependency for FastAPI
+langchain-core>=0.1.0  # Used for output parsers and base classes
+
+# Data processing
+pandas>=2.0.0  # Used in graph_nodes.py for Excel processing and data manipulation
+typing-extensions>=4.5.0  # Used in models.py for type hints and annotations
+
+# Error handling and utilities
+traceback>=0.0.0  # Used in graph_nodes.py for error handling and debugging
+langgraph>=0.0.1  # Used in graph_nodes.py for StateGraph workflow management
+
+# Standard library dependencies
+json>=2.0.9  # Used in websocket_server.py for message handling and serialization
+datetime>=4.3  # Used in websocket_server.py for timestamps and message metadata
+uuid>=1.30  # Used in websocket_server.py for conversation IDs and tracking
+
+
+
+

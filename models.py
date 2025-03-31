@@ -21,6 +21,7 @@ class CheckResult(BaseModel):
     sources: List[str] = Field(default_factory=list, description="Specific sentences or passages from the document context that directly support the 'is_met' conclusion and reliability score. Should be exact quotes.")
     analysis_details: str = Field("", description="Brief LLM reasoning or explanation for the conclusion and reliability score, referencing the context.")
     needs_human_review: bool = Field(False, description="True if reliability score is below 50%, indicating need for manual verification.")
+    user_input: Optional[str] = Field(None, description="Human input provided during analysis to improve reliability.")
 
     @field_validator('reliability')
     def check_reliability_range(cls, v):

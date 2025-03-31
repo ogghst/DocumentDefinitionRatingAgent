@@ -30,7 +30,7 @@ def initialize_llm():
             llm = ChatDeepSeek(
                 model="deepseek-chat",
                 temperature=0.3,
-                max_tokens=1024,
+                max_tokens=512,
                 timeout=30,
                 max_retries=2,
                 streaming=True,
@@ -43,7 +43,7 @@ def initialize_llm():
             llm = ChatOllama(
                 model=OLLAMA_MODEL,
                 base_url=OLLAMA_BASE_URL,
-                max_tokens=1024,
+                max_tokens=512,
                 temperature=0.3,
                 max_predict=1024,
                 # Add a reasonable timeout

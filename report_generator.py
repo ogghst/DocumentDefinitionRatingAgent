@@ -273,6 +273,92 @@ class ChecklistReportGenerator:
             charts.append(img)
             plt.close(fig)
             
+        # 4. Human Input Distribution
+        checks_with_input = [(result['check_item']['id'], result['check_item']['name'], result.get('user_input', '')) 
+                             for result in self.results 
+                             if 'check_item' in result and 'user_input' in result and result['user_input']]
+        
+        if checks_with_input:
+            fig, ax = plt.subplots(figsize=(7, 4))
+            
+            # Create a pie chart showing breakdown of human input types
+            total_checks = len(self.results)
+            input_count = len(checks_with_input)
+            no_input_count = total_checks - input_count
+            
+            # Count different types of inputs
+            acceptance_inputs = sum(1 for _, _, response in checks_with_input if response in ["1", "skip", "continue", "accept"])
+            info_provided = input_count - acceptance_inputs
+            
+            # Create a more detailed breakdown
+            labels = ['Additional Info Provided', 'Assessment Accepted', 'No Human Input']
+            sizes = [info_provided, acceptance_inputs, no_input_count]
+            colors = ['#4169E1', '#6495ED', '#DCDCDC']  # Royal blue, cornflower blue, light gray
+            
+            # Don't show empty segments
+            non_zero_indices = [i for i, size in enumerate(sizes) if size > 0]
+            filtered_labels = [labels[i] for i in non_zero_indices]
+            filtered_sizes = [sizes[i] for i in non_zero_indices]
+            filtered_colors = [colors[i] for i in non_zero_indices]
+            
+            if filtered_sizes:  # Only create pie if we have data
+                ax.pie(filtered_sizes, labels=filtered_labels, colors=filtered_colors, 
+                      autopct='%1.1f%%', startangle=90)
+                ax.axis('equal')
+                plt.title('Human Input Distribution')
+                
+                # Save the figure to a BytesIO object
+                img_data = BytesIO()
+                fig.savefig(img_data, format='png', bbox_inches='tight')
+                img_data.seek(0)
+                
+                # Create an Image object
+                img = Image(img_data, width=4*inch, height=3*inch)
+                charts.append(img)
+            plt.close(fig)
+            
+            # Add a table listing checks that received human input
+            if checks_with_input:
+                fig, ax = plt.subplots(figsize=(7, max(3, 0.4 * len(checks_with_input))))
+                ax.axis('tight')
+                ax.axis('off')
+                
+                # Create table data with input type
+                table_data = [['Check ID', 'Check Name', 'Input Type']]
+                for check_id, check_name, response in checks_with_input:
+                    input_type = "Accepted Assessment" if response in ["1", "skip", "continue", "accept"] else "Additional Info"
+                    table_data.append([str(check_id), check_name, input_type])
+                
+                # Create the table
+                table = ax.table(cellText=table_data, 
+                                loc='center', 
+                                cellLoc='left',
+                                colWidths=[0.12, 0.70, 0.18])
+                
+                # Style the table
+                table.auto_set_font_size(False)
+                table.set_fontsize(10)
+                table.scale(1, 1.5)  # Adjust row height
+                
+                # Style header row
+                for j in range(len(table_data[0])):
+                    cell = table[(0, j)]
+                    cell.set_text_props(weight='bold', color='white')
+                    cell.set_facecolor('#4682B4')  # Steel blue for header
+                
+                plt.title('Checks That Received Human Input', pad=20)
+                plt.tight_layout()
+                
+                # Save the figure to a BytesIO object
+                img_data = BytesIO()
+                fig.savefig(img_data, format='png', bbox_inches='tight')
+                img_data.seek(0)
+                
+                # Create an Image object
+                img = Image(img_data, width=5.5*inch, height=min(7, 0.4 * len(checks_with_input) + 1)*inch)
+                charts.append(img)
+                plt.close(fig)
+            
         return charts
     
     def create_detailed_sections(self):
@@ -311,6 +397,25 @@ class ChecklistReportGenerator:
             needs_review = result.get('needs_human_review', False)
             review_text = f"<b>Needs Human Review:</b> {'Yes' if needs_review else 'No'}"
             elements.append(Paragraph(review_text, self.normal_style))
+            
+            # Human input (if available)
+            if 'user_input' in result and result['user_input']:
+                # Create a header with context about the input
+                if result['user_input'] in ["1", "skip", "continue", "accept"]:
+                    elements.append(Paragraph("<b>Human Input:</b> <i>(User accepted the low-reliability result)</i>", self.normal_style))
+                else:
+                    elements.append(Paragraph("<b>Human Input:</b> <i>(User provided additional information)</i>", self.normal_style))
+                
+                # Format the user input with a different style to highlight it
+                user_input_style = ParagraphStyle(
+                    'UserInput',
+                    parent=self.normal_style,
+                    fontName='Helvetica-Oblique',
+                    textColor=colors.navy,
+                    leftIndent=20
+                )
+                # Display the exact user input as provided
+                elements.append(Paragraph(f'"{result["user_input"]}"', user_input_style))
             
             # Analysis details
             if 'analysis_details' in result and result['analysis_details']:
@@ -356,6 +461,11 @@ class ChecklistReportGenerator:
             not_met_count = total_checks - met_count
             meets_percentage = (met_count / total_checks * 100) if total_checks > 0 else 0
             
+            # Detailed human input statistics
+            human_input_count = sum(1 for result in self.results if result.get('user_input'))
+            acceptance_count = sum(1 for result in self.results if result.get('user_input') in ["1", "skip", "continue", "accept"])
+            info_provided_count = human_input_count - acceptance_count
+            
             summary = f"""
             This report analyzes {total_checks} checklist items for the <b>{self.phase}</b> phase.
             <br/><br/>
@@ -363,6 +473,9 @@ class ChecklistReportGenerator:
             <br/>• {met_count} items ({meets_percentage:.1f}%) are met
             <br/>• {not_met_count} items ({100-meets_percentage:.1f}%) are not met
             <br/>• {sum(1 for result in self.results if result.get('needs_human_review', False))} items require human review
+            <br/>• {human_input_count} items received human input during analysis
+            <br/>  - {acceptance_count} items where the user accepted the initial assessment
+            <br/>  - {info_provided_count} items where the user provided additional information
             """
             elements.append(Paragraph(summary, self.normal_style))
             elements.append(Spacer(1, 0.2*inch))

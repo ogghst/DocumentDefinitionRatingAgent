@@ -262,6 +262,8 @@ Enter "1" to accept and continue, or type your answer to the question(s) above:
             
             if user_response in ["1", "skip", "continue", "accept"]:
                 await broadcast_message(f"User chose to accept the current result for check ID {check_item.id}")
+                # Record the exact user response
+                result.user_input = user_response
                 break
             elif user_response in ["2", "improve"]:
                 await broadcast_message(f"User chose to provide more information...")
@@ -273,13 +275,17 @@ Enter "1" to accept and continue, or type your answer to the question(s) above:
                 else:
                     additional_info = await get_user_input(info_prompt, conversation_id)
                 
+                # Record the exact user input without any modification
+                result.user_input = additional_info
+                
                 # Add to the context for the next attempt
                 await broadcast_message(f"Retrying analysis with additional information...")
                 attempt += 1
                 continue
             else:
-                # User provided specific information
+                # User provided specific information - store exactly as provided
                 additional_info = user_response
+                result.user_input = user_response
                 await broadcast_message(f"Retrying analysis with user information...")
                 attempt += 1
                 continue
@@ -299,7 +305,7 @@ Enter "1" to accept and continue, or type your answer to the question(s) above:
         )
 
 async def format_final_output(state: GraphState) -> GraphState:
-    """Formats the results list into the final JSON structure and handles errors."""
+    """Formats the results list into the final JSON structure, saves to JSON file, and generates PDF report."""
     await broadcast_message(f"\n--- Node: format_final_output ---")
 
     if error_message := state.get("error_message"):
@@ -349,6 +355,42 @@ async def format_final_output(state: GraphState) -> GraphState:
         else:
             await broadcast_message(f"SUMMARY: All {valid_results_count} analyzed checks met the reliability threshold (>= 50%).")
     
+    # Save results to JSON file
+    import json
+    import os
+    from datetime import datetime
+    
+    # Create output directory if it doesn't exist
+    os.makedirs('output', exist_ok=True)
+    
+    # Generate a timestamp for the filename
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    
+    # Create the JSON filename
+    json_filename = f"output/analysis_results_{timestamp}.json"
+    
+    # Save the results to the JSON file
+    try:
+        with open(json_filename, 'w') as f:
+            json.dump(state["final_results"], f, indent=2)
+        await broadcast_message(f"Results saved to JSON file: {json_filename}")
+    except Exception as e:
+        await broadcast_message(f"Error saving results to JSON file: {e}")
+    
+    # Generate PDF report
+    try:
+        from report_generator import ChecklistReportGenerator
+        
+        # Create the report generator instance
+        report_generator = ChecklistReportGenerator(json_filename)
+        
+        # Generate the PDF report
+        pdf_path = report_generator.generate_pdf()
+        
+        await broadcast_message(f"PDF report generated: {pdf_path}")
+    except Exception as e:
+        await broadcast_message(f"Error generating PDF report: {e}")
+        
     return state
 
 async def analyze_checks_map_function(state: GraphState) -> GraphState:

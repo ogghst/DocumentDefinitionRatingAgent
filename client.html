@@ -1,123 +1,421 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>RAG Conversation Client - Token Debug Version</title>
+    <title>RAG Conversation Client</title>
+    <!-- Add markdown-it library for markdown rendering -->
+    <script src="https://cdn.jsdelivr.net/npm/markdown-it@13.0.1/dist/markdown-it.min.js"></script>
+    <!-- Add Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
+        :root {
+            --primary: #4f46e5;
+            --primary-light: #6366f1;
+            --primary-dark: #4338ca;
+            --secondary: #0ea5e9;
+            --accent: #8b5cf6;
+            --background: #f8fafc;
+            --card-bg: #ffffff;
+            --text: #1e293b;
+            --text-light: #64748b;
+            --border: #e2e8f0;
+            --error: #ef4444;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --token: #15803d;
+        }
+        
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        
         body {
-            font-family: monospace;
-            margin: 20px;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: var(--background);
+            color: var(--text);
+            line-height: 1.5;
         }
+        
+        h1, h2, h3, h4 {
+            font-weight: 600;
+            color: var(--primary-dark);
+            margin-bottom: 16px;
+        }
+        
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        .header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 24px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid var(--border);
+        }
+        
+        .status-badge {
+            display: inline-block;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: 500;
+            background-color: var(--text-light);
+            color: white;
+        }
+        
+        .status-badge.connected {
+            background-color: var(--success);
+        }
+        
+        #connection-status {
+            font-weight: 500;
+        }
+        
         #messages {
-            border: 1px solid #ccc;
-            padding: 10px;
-            height: 400px;
+            border: 1px solid var(--border);
+            padding: 16px;
+            height: 600px;
             overflow-y: scroll;
-            margin-bottom: 10px;
-            background-color: #f8f8f8;
+            margin-bottom: 16px;
+            background-color: var(--card-bg);
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
         }
-        #token-stream {
-            border: 1px solid #008000;
-            padding: 10px;
-            height: 200px;
-            overflow-y: scroll;
-            margin-bottom: 10px;
-            background-color: #f0fff0;
-            font-family: monospace;
-            white-space: pre-wrap;
-        }
+        
         .message {
-            border-bottom: 1px solid #eee;
-            padding: 5px 0;
-            margin-bottom: 5px;
+            padding: 10px 16px;
+            margin-bottom: 12px;
+            border-radius: 8px;
+            max-width: 85%;
+            position: relative;
         }
+        
+        .message.user {
+            background-color: var(--primary-light);
+            color: white;
+            margin-left: auto;
+            margin-right: 0;
+            border-bottom-right-radius: 0;
+        }
+        
+        .message.system {
+            background-color: var(--text-light);
+            color: white;
+            margin-left: auto;
+            margin-right: auto;
+            max-width: 70%;
+            text-align: center;
+            font-size: 0.9em;
+            font-style: italic;
+            opacity: 0.8;
+        }
+        
+        .message:not(.user):not(.system) {
+            background-color: var(--background);
+            border: 1px solid var(--border);
+            margin-right: auto;
+            margin-left: 0;
+            border-bottom-left-radius: 0;
+        }
+        
         .message-type {
-            font-weight: bold;
-            color: blue;
-        }
-        #controls {
-            margin-top: 10px;
-        }
-        button {
-            padding: 8px 16px;
-            margin-right: 5px;
-        }
-        input {
-            padding: 8px;
-            width: 300px;
-        }
-        .log-message {
-            margin: 4px 0;
-            border-radius: 4px;
+            font-weight: 600;
+            color: var(--primary);
+            display: inline-block;
+            margin-bottom: 4px;
             font-size: 0.9em;
         }
-        .input_request {
-            background-color: #e8eaf6;
-            border-left: 4px solid #3f51b5;
-            width: 100%;
-            font-weight: bold;
-            padding: 10px;
-            margin: 15px 0;
-            border-radius: 5px;
-            font-size: 1.1em;
+        
+        #setup {
+            background-color: var(--card-bg);
+            padding: 24px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            margin-bottom: 24px;
         }
+        
+        #controls {
+            margin-top: 16px;
+            display: flex;
+            gap: 8px;
+        }
+        
+        button {
+            padding: 10px 16px;
+            border: none;
+            border-radius: 6px;
+            font-family: inherit;
+            font-weight: 500;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.2s;
+            background-color: var(--primary);
+            color: white;
+        }
+        
+        button:hover {
+            background-color: var(--primary-dark);
+            transform: translateY(-1px);
+        }
+        
+        button:active {
+            transform: translateY(0);
+        }
+        
+        button#create-btn {
+            background-color: var(--secondary);
+        }
+        
+        button#create-btn:hover {
+            background-color: #0284c7;
+        }
+        
+        button#start-btn {
+            background-color: var(--success);
+        }
+        
+        button#start-btn:hover {
+            background-color: #059669;
+        }
+        
+        button#submitResponseBtn {
+            background-color: var(--accent);
+        }
+        
+        button#submitResponseBtn:hover {
+            background-color: #7c3aed;
+        }
+        
+        input, textarea {
+            padding: 10px 14px;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            font-family: inherit;
+            font-size: 14px;
+            width: 100%;
+            background-color: var(--card-bg);
+            color: var(--text);
+            transition: border-color 0.2s;
+        }
+        
+        input:focus, textarea:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.1);
+        }
+        
+        .input-group {
+            display: flex;
+            gap: 8px;
+            flex: 1;
+        }
+        
+        .log-message {
+            font-size: 0.85em;
+            color: var(--text-light);
+            padding: 8px;
+            background-color: #f1f5f9;
+            border-radius: 4px;
+            margin: 8px 0;
+        }
+        
+        .input_request {
+            background-color: #ede9fe;
+            border-left: 4px solid var(--accent);
+            padding: 16px;
+            margin: 16px 0;
+            border-radius: 6px;
+        }
+        
         .rag_waiting {
-            background-color: #fff8e1;
-            color: #ff8f00;
-            border: 1px dashed #ff8f00;
-            padding: 10px;
+            background-color: #fef3c7;
+            color: var(--warning);
+            border: 1px dashed var(--warning);
+            padding: 12px;
             text-align: center;
-            margin: 10px 0;
-            font-weight: bold;
+            margin: 12px auto;
+            max-width: 80%;
+            font-weight: 500;
+            border-radius: 6px;
             animation: pulseBorder 2s infinite;
         }
+        
         @keyframes pulseBorder {
-            0% { border-color: #ff8f00; }
-            50% { border-color: #ffcc80; }
-            100% { border-color: #ff8f00; }
+            0% { border-color: var(--warning); }
+            50% { border-color: #fdba74; }
+            100% { border-color: var(--warning); }
         }
+        
         #inputResponseForm {
             display: none;
-            border: 1px solid #3f51b5;
-            padding: 15px;
+            border: 1px solid var(--border);
+            padding: 20px;
             border-radius: 8px;
-            margin: 15px 0;
-            background-color: #e8eaf6;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            margin: 16px 0;
+            background-color: var(--card-bg);
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+        }
+        
+        /* Markdown rendered content styling */
+        .markdown-content {
+            line-height: 1.6;
+            word-wrap: break-word;
+        }
+        
+        .markdown-content h1, 
+        .markdown-content h2 {
+            border-bottom: 1px solid var(--border);
+            padding-bottom: 0.3em;
+        }
+        
+        .markdown-content h1, 
+        .markdown-content h2, 
+        .markdown-content h3, 
+        .markdown-content h4, 
+        .markdown-content h5, 
+        .markdown-content h6 {
+            margin-top: 24px;
+            margin-bottom: 16px;
+            font-weight: 600;
+            line-height: 1.25;
+        }
+        
+        .markdown-content code {
+            padding: 0.2em 0.4em;
+            margin: 0;
+            font-size: 85%;
+            background-color: rgba(0, 0, 0, 0.05);
+            border-radius: 3px;
+            font-family: SFMono-Regular, Consolas, Liberation Mono, Menlo, monospace;
+        }
+        
+        .markdown-content pre {
+            background-color: #f8f9fa;
+            border-radius: 6px;
+            padding: 16px;
+            overflow: auto;
+        }
+        
+        .markdown-content pre code {
+            background-color: transparent;
+            padding: 0;
+        }
+        
+        .markdown-content blockquote {
+            padding: 0 1em;
+            color: var(--text-light);
+            border-left: 0.25em solid var(--border);
+            margin: 0 0 16px 0;
+        }
+        
+        .markdown-content table {
+            border-collapse: collapse;
+            width: 100%;
+            margin-bottom: 16px;
+        }
+        
+        .markdown-content table th, 
+        .markdown-content table td {
+            padding: 6px 13px;
+            border: 1px solid var(--border);
+        }
+        
+        .markdown-content table tr:nth-child(2n) {
+            background-color: #f8f9fa;
+        }
+        
+        .token-stream {
+            font-family: 'Consolas', 'Monaco', 'Andale Mono', monospace;
+            white-space: pre-wrap;
+            color: var(--token);
+            border-left: 3px solid var(--token);
+            padding-left: 12px;
+            margin: 10px 0;
+            font-size: 14px;
+            line-height: 1.5;
+        }
+        
+        .markdown-hints {
+            background-color: rgba(99, 102, 241, 0.05);
+            border-radius: 6px;
+            padding: 8px 12px;
+            font-size: 13px;
+            color: var(--text-light);
+            margin-top: 8px;
+        }
+        
+        .markdown-hints code {
+            background-color: rgba(99, 102, 241, 0.1);
+            padding: 2px 5px;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+        
+        /* Animation for token streaming */
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        
+        .token-message {
+            animation: fadeIn 0.3s ease-in-out;
         }
     </style>
 </head>
 <body>
-    <h1>RAG Token Debug Client</h1>
-    
-    <div id="connection-status">Disconnected</div>
-    
-    <div id="setup">
-        <h3>Connect to Conversation</h3>
-        <input type="text" id="conversation-id" placeholder="Conversation ID">
-        <button id="connect-btn">Connect</button>
-        <button id="create-btn">Create New Conversation</button>
+    <div class="container">
+        <div class="header">
+            <h1>RAG Conversation Client</h1>
+            <div id="connection-status" class="status-badge">Disconnected</div>
         </div>
-    
-    <div id="conversation" style="display:none;">
-        <h3 id="conversation-title">Conversation</h3>
         
-        <h4>Token Stream</h4>
-        <div id="token-stream"></div>
-        
-        <h4>Messages</h4>
-        <div id="messages"></div>
-        
-        <div id="inputResponseForm">
-            <textarea id="responseInput" rows="5" style="width: 100%; margin-top: 10px;" placeholder="Enter your response here..."></textarea>
-            <div style="margin-top: 10px;">
-                <button id="submitResponseBtn">Submit Response</button>
+        <div id="setup">
+            <h3>Connect to Conversation</h3>
+            <div style="display: flex; gap: 8px; margin-top: 16px;">
+                <div class="input-group">
+                    <input type="text" id="conversation-id" placeholder="Enter Conversation ID">
+                    <button id="connect-btn">Connect</button>
+                </div>
+                <button id="create-btn">Create New</button>
             </div>
         </div>
         
-        <div id="controls">
-            <button id="start-btn">Start RAG Analysis</button>
-            <input type="text" id="message-input" placeholder="Type a message...">
-            <button id="send-btn">Send</button>
+        <div id="conversation" style="display:none;">
+            <h3 id="conversation-title">Conversation</h3>
+            
+            <div id="messages"></div>
+            
+            <div id="inputResponseForm">
+                <div class="input-prompt"></div>
+                <textarea id="responseInput" rows="5" placeholder="Enter your response here..."></textarea>
+                <div class="markdown-hints">
+                    <strong>Markdown formatting:</strong> 
+                    <code># Heading</code> 
+                    <code>**bold**</code> 
+                    <code>*italic*</code> 
+                    <code>- list</code> 
+                    <code>[link](url)</code> 
+                    <code>```code```</code>
+                </div>
+                <div style="margin-top: 12px; text-align: right;">
+                    <button id="submitResponseBtn">Submit Response</button>
+                </div>
+            </div>
+            
+            <div id="controls">
+                <button id="start-btn">Start RAG Analysis</button>
+                <!--<div class="input-group">
+                    <input type="text" id="message-input" placeholder="Type a message...">
+                    <button id="send-btn">Send</button>
+                </div>-->
+            </div>
         </div>
     </div>
     
@@ -126,13 +424,23 @@
         const API_URL = 'http://localhost:8765';
         let socket = null;
         let currentConversationId = null;
-        let tokenContent = '';
+        let isStreamingTokens = false;
+        let currentStreamDiv = null;
         
         const messagesDiv = document.getElementById('messages');
-        const tokenStreamDiv = document.getElementById('token-stream');
         const statusDiv = document.getElementById('connection-status');
         const conversationDiv = document.getElementById('conversation');
         const setupDiv = document.getElementById('setup');
+        const responseInput = document.getElementById('responseInput');
+        const inputResponseForm = document.getElementById('inputResponseForm');
+        
+        // Initialize markdown-it parser
+        const md = window.markdownit({
+            html: false,        // Disable HTML tags in source
+            breaks: true,       // Convert '\n' in paragraphs into <br>
+            linkify: true,      // Autoconvert URL-like text to links
+            typographer: true   // Enable some language-neutral replacement + quotes beautification
+        });
         
         // Connect to a conversation
         async function connectToConversation(id) {
@@ -153,32 +461,32 @@
                 
                 // Update UI
                 document.getElementById('conversation-title').textContent = 
-                    `Conversation: ${conversation.title} (ID: ${id})`;
+                    `${conversation.title}`;
                 conversationDiv.style.display = 'block';
                 setupDiv.style.display = 'none';
-                messagesDiv.innerHTML = '<div class="message">Connecting...</div>';
-                tokenStreamDiv.textContent = '';
-                tokenContent = '';
+                messagesDiv.innerHTML = '<div class="message system">Connecting...</div>';
+                isStreamingTokens = false;
+                currentStreamDiv = null;
                 
                 // Connect WebSocket
                 socket = new WebSocket(`ws://localhost:8765/ws/${id}`);
                 
                 // Log all events for debugging
                 socket.onopen = (event) => {
-                    statusDiv.textContent = `Connected to conversation ${id}`;
-                    statusDiv.style.color = 'green';
+                    statusDiv.textContent = 'Connected';
+                    statusDiv.classList.add('connected');
                     addSystemMessage('WebSocket connected');
                 };
                 
                 socket.onclose = (event) => {
-                    statusDiv.textContent = `Disconnected: Code ${event.code}`;
-                    statusDiv.style.color = 'red';
+                    statusDiv.textContent = 'Disconnected';
+                    statusDiv.classList.remove('connected');
                     addSystemMessage(`WebSocket closed: ${event.code} ${event.reason}`);
                 };
                 
                 socket.onerror = (error) => {
-                    statusDiv.textContent = 'WebSocket error';
-                    statusDiv.style.color = 'red';
+                    statusDiv.textContent = 'Error';
+                    statusDiv.classList.remove('connected');
                     addSystemMessage('WebSocket error: ' + JSON.stringify(error));
                 };
                 
@@ -202,15 +510,20 @@
                         // Handle input requests
                         if (message.type === 'input_request') {
                             console.log('INPUT REQUEST:', message.content);
+                            // End any active token stream
+                            finishTokenStream();
                             showInputRequestForm(message.content);
                             return;
                         }
                         
                         // Handle errors
                         if (message.type === 'error') {
+                            // End any active token stream
+                            finishTokenStream();
+                            
                             const errorDiv = document.createElement('div');
                             errorDiv.className = 'message error';
-                            errorDiv.style.color = 'red';
+                            errorDiv.style.color = 'var(--error)';
                             errorDiv.textContent = `Error: ${message.content}`;
                             messagesDiv.appendChild(errorDiv);
                             scrollToBottom();
@@ -220,6 +533,9 @@
                         // Check for waiting messages
                         if (message.type === 'rag_progress' && 
                             message.content.includes('Waiting for human input')) {
+                            // End any active token stream
+                            finishTokenStream();
+                            
                             // Add a special waiting indicator
                             const waitingDiv = document.createElement('div');
                             waitingDiv.className = 'message rag_waiting';
@@ -230,9 +546,12 @@
                         }
                         
                         // For all other message types
+                        // End any active token stream first
+                        finishTokenStream();
                         displayMessage(message);
                     } catch (error) {
                         // If parsing fails, it's a log message
+                        finishTokenStream();
                         displayLogMessage(rawData);
                     }
                 };
@@ -241,47 +560,54 @@
             }
         }
         
-        // Streamlined token handler for better performance
+        // Unified token handler that displays in the messages area
         function handleToken(token) {
             // For debugging
             console.log(`Token received: "${token}"`);
             
-            // Update token content
-            tokenContent += token;
+            // If not currently streaming, create a new stream div
+            if (!isStreamingTokens || !currentStreamDiv) {
+                startNewTokenStream();
+            }
             
-            // Use requestAnimationFrame for smooth updates
-            window.requestAnimationFrame(() => {
-                // Update display directly
-                tokenStreamDiv.textContent = tokenContent;
-                tokenStreamDiv.scrollTop = tokenStreamDiv.scrollHeight;
-            });
+            // Append the token to the current stream
+            currentStreamDiv.textContent += token;
+            scrollToBottom();
+        }
+        
+        // Start a new token stream in the messages area
+        function startNewTokenStream() {
+            // Create a container for the token stream
+            const streamContainer = document.createElement('div');
+            streamContainer.className = 'message token-message';
             
-            // Display the individual token (optional)
-            const div = document.createElement('div');
-            div.className = 'token-marker';
-            div.style.display = 'inline-block';
-            div.style.color = 'green';
-            div.style.padding = '0 2px';
-            div.style.margin = '0 1px';
-            div.style.fontSize = '0.8em';
-            div.textContent = token;
+            // Create a label
+            const typeSpan = document.createElement('span');
+            typeSpan.className = 'message-type';
+            typeSpan.textContent = 'RAG';
+            streamContainer.appendChild(typeSpan);
             
-            const tokenContainer = document.getElementById('token-debug') || 
-                (() => {
-                    const container = document.createElement('div');
-                    container.id = 'token-debug';
-                    container.style.display = 'none'; // Hide by default, toggle for debugging
-                    container.style.maxHeight = '100px';
-                    container.style.overflow = 'auto';
-                    container.style.border = '1px dashed green';
-                    container.style.padding = '5px';
-                    container.style.marginTop = '5px';
-                    document.body.appendChild(container);
-                    return container;
-                })();
+            // Create the token stream content div
+            const tokenDiv = document.createElement('div');
+            tokenDiv.className = 'token-stream';
+            tokenDiv.textContent = '';
+            streamContainer.appendChild(tokenDiv);
             
-            tokenContainer.appendChild(div);
-            tokenContainer.scrollTop = tokenContainer.scrollHeight;
+            // Add to messages
+            messagesDiv.appendChild(streamContainer);
+            
+            // Update state
+            isStreamingTokens = true;
+            currentStreamDiv = tokenDiv;
+            scrollToBottom();
+        }
+        
+        // End the current token stream
+        function finishTokenStream() {
+            if (isStreamingTokens && currentStreamDiv) {
+                isStreamingTokens = false;
+                currentStreamDiv = null;
+            }
         }
         
         // Create a new conversation
@@ -291,7 +617,7 @@
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({
-                        title: 'Token Debug Conversation',
+                        title: 'New Conversation',
                         checklist_path: 'checklists/project_checklist_demo.xlsx',
                         document_path: 'input/quotation_demo.docx',
                         target_phase: 'Apertura Commessa'
@@ -300,7 +626,9 @@
                 
                 const data = await response.json();
                 document.getElementById('conversation-id').value = data.id;
-                alert(`Created conversation with ID: ${data.id}`);
+                
+                // Auto-connect to the new conversation
+                connectToConversation(data.id);
             } catch (error) {
                 alert('Error creating conversation: ' + error.message);
             }
@@ -312,8 +640,10 @@
             
             try {
                 document.getElementById('start-btn').disabled = true;
-                tokenContent = ''; // Reset token stream
-                tokenStreamDiv.textContent = '';
+                document.getElementById('start-btn').textContent = 'Starting...';
+                
+                // Add a system message
+                addSystemMessage('Starting RAG analysis...');
                 
                 await fetch(`${API_URL}/conversations/${currentConversationId}/start`, {
                     method: 'POST'
@@ -323,6 +653,7 @@
             } catch (error) {
                 alert('Error starting RAG analysis: ' + error.message);
                 document.getElementById('start-btn').disabled = false;
+                document.getElementById('start-btn').textContent = 'Start RAG Analysis';
             }
         }
         
@@ -348,19 +679,45 @@
             const div = document.createElement('div');
             div.className = 'message';
             
-            // Create type label
-            const typeSpan = document.createElement('span');
-            typeSpan.className = 'message-type';
-            typeSpan.textContent = `[${message.type || 'unknown'}]`;
+            // Add type-specific classes
+            if (message.type) {
+                div.classList.add(message.type);
+            }
             
-            // Create content container
-            const contentDiv = document.createElement('div');
-            
-            // Handle different content types
-            if (typeof message.content === 'string') {
-                contentDiv.textContent = message.content;
+            // For user messages, use a different style
+            if (message.type === 'user') {
+                // Create content container
+                const contentDiv = document.createElement('div');
+                contentDiv.className = 'markdown-content';
+                contentDiv.innerHTML = md.render(message.content);
+                div.appendChild(contentDiv);
             } else {
-                contentDiv.innerHTML = '<pre>' + JSON.stringify(message, null, 2) + '</pre>';
+                // Create type label for non-user messages
+                const typeSpan = document.createElement('span');
+                typeSpan.className = 'message-type';
+                typeSpan.textContent = message.type || 'unknown';
+                
+                // Create content container
+                const contentDiv = document.createElement('div');
+                
+                // Handle different content types
+                if (typeof message.content === 'string') {
+                    // Determine if we should render markdown based on message type
+                    if (message.type === 'input_request') {
+                        // For input requests, render as markdown
+                        contentDiv.className = 'markdown-content';
+                        contentDiv.innerHTML = md.render(message.content);
+                    } else {
+                        // For other types like system messages, use plain text
+                        contentDiv.textContent = message.content;
+                    }
+                } else {
+                    contentDiv.innerHTML = '<pre>' + JSON.stringify(message, null, 2) + '</pre>';
+                }
+                
+                div.appendChild(typeSpan);
+                div.appendChild(document.createTextNode(' '));
+                div.appendChild(contentDiv);
             }
             
             // Add timestamp if available
@@ -369,47 +726,34 @@
                 div.title = time;
             }
             
-            div.appendChild(typeSpan);
-            div.appendChild(document.createTextNode(' '));
-            div.appendChild(contentDiv);
-            
             messagesDiv.appendChild(div);
-            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+            scrollToBottom();
         }
         
         // Display a log message with better formatting
         function displayLogMessage(message) {
             const div = document.createElement('div');
             div.className = 'message log-message';
-            div.style.color = '#444';
-            div.style.backgroundColor = '#f0f0f0';
-            div.style.padding = '4px 8px';
-            div.style.borderLeft = '3px solid #888';
-            div.style.fontFamily = 'monospace';
-            div.style.whiteSpace = 'pre-wrap';
             
             const typeSpan = document.createElement('span');
             typeSpan.className = 'message-type';
-            typeSpan.textContent = '[log]';
-            typeSpan.style.color = '#888';
+            typeSpan.textContent = 'log';
             
             div.appendChild(typeSpan);
             div.appendChild(document.createTextNode(' ' + message));
             
             messagesDiv.appendChild(div);
-            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+            scrollToBottom();
         }
         
         // Add a system message (client-generated)
         function addSystemMessage(content) {
             const div = document.createElement('div');
-            div.className = 'message';
-            div.style.color = 'blue';
-            div.style.fontStyle = 'italic';
-            div.textContent = '* ' + content;
+            div.className = 'message system';
+            div.textContent = content;
             
             messagesDiv.appendChild(div);
-            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+            scrollToBottom();
         }
         
         // Handle input requests from the RAG system
@@ -419,17 +763,20 @@
             
             // Set a clear prompt
             const promptElement = document.createElement('div');
-            promptElement.className = 'input-prompt';
-            promptElement.innerHTML = `<strong>RAG Analysis Paused:</strong> Please answer the following questions to continue:<br><br>${message}`;
+            promptElement.className = 'input-prompt markdown-content';
+            
+            // Render the prompt message as markdown
+            promptElement.innerHTML = md.render(message) + 
+                '<p><em>You can use Markdown formatting in your response</em></p>';
             
             // Clear any previous prompt
             const existingPrompt = inputResponseForm.querySelector('.input-prompt');
             if (existingPrompt) {
-                existingPrompt.remove();
+                existingPrompt.innerHTML = '';
+                existingPrompt.appendChild(promptElement);
+            } else {
+                inputResponseForm.querySelector('.input-prompt').appendChild(promptElement);
             }
-            
-            // Add the new prompt before the textarea
-            inputResponseForm.insertBefore(promptElement, responseInput);
             
             // Focus the textarea for input
             responseInput.focus();
@@ -466,7 +813,15 @@
             // Add user's response to message history
             const responseDiv = document.createElement('div');
             responseDiv.className = 'message user';
-            responseDiv.innerHTML = `<strong>Your response:</strong><br>${content || '(skipped)'}`;
+            
+            // Create a container for formatted content
+            const responseContent = document.createElement('div');
+            responseContent.className = 'markdown-content';
+            
+            // Add markdown-rendered content
+            responseContent.innerHTML = content ? md.render(content) : '<em>(skipped)</em>';
+            
+            responseDiv.appendChild(responseContent);
             messagesDiv.appendChild(responseDiv);
             
             // Hide the input form and clear it
@@ -476,7 +831,7 @@
             // Add a message that we've submitted
             const submitDiv = document.createElement('div');
             submitDiv.className = 'message system';
-            submitDiv.textContent = 'Response submitted. Waiting for RAG analysis to continue...';
+            submitDiv.textContent = 'Response submitted. RAG analysis continuing...';
             messagesDiv.appendChild(submitDiv);
             
             scrollToBottom();

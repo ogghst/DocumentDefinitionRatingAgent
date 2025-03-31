@@ -149,10 +149,10 @@ class WebsocketCallbackManager(BaseCallbackHandler):
         if serialized is not None and isinstance(serialized, dict):
             chain_type = serialized.get("name", "Chain")
         
-        self._schedule_coroutine(self._send_message(
-            f"Starting {chain_type}...",
-            "rag_progress"
-        ))
+        #self._schedule_coroutine(self._send_message(
+        #    f"Starting {chain_type}...",
+        #    "rag_progress"
+        #))
     
     def on_chain_end(self, outputs: Dict[str, Any], **kwargs: Any) -> None:
         """Run when chain ends."""
@@ -160,10 +160,10 @@ class WebsocketCallbackManager(BaseCallbackHandler):
         if not isinstance(outputs, dict):
             outputs = {}
             
-        self._schedule_coroutine(self._send_message(
-            "Chain completed",
-            "rag_progress"
-        ))
+        #self._schedule_coroutine(self._send_message(
+        #    "Chain completed",
+        #    "rag_progress"
+        #))
     
     def on_chain_error(self, error: Exception, **kwargs: Any) -> None:
         """Run when chain errors."""

@@ -12,10 +12,17 @@ DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
 DEEPSEEK_API_BASE = os.getenv("DEEPSEEK_API_BASE")
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL")
+OLLAMA_EMBEDDING_MODEL = os.getenv("OLLAMA_EMBEDDING_MODEL")
 
 # Validate required environment variables
-if not OLLAMA_BASE_URL or not OLLAMA_MODEL:
-    raise ValueError("Missing OLLAMA_BASE_URL and OLLAMA_MODEL environment variables. Cannot initialize LLM.")
+if not OLLAMA_BASE_URL:
+    raise ValueError("Missing OLLAMA_BASE_URL environment variables. Cannot initialize LLM.")
+
+if not OLLAMA_EMBEDDING_MODEL:
+    raise ValueError("Missing OLLAMA_EMBEDDING_MODEL environment variable. Cannot initialize embeddings.")
+
+if not OLLAMA_MODEL:
+    raise ValueError("Missing OLLAMA_MODEL environment variable. Cannot initialize LLM.")
 
 # Initialize LLM components
 def initialize_llm():
@@ -29,10 +36,10 @@ def initialize_llm():
             print(f"Using DeepSeek LLM: base_url='{DEEPSEEK_API_BASE}'")
             llm = ChatDeepSeek(
                 model="deepseek-chat",
-                temperature=0.3,
+                temperature=0,
                 max_tokens=512,
-                timeout=30,
-                max_retries=2,
+                timeout=60,
+                max_retries=3,
                 streaming=True,
                 base_url=DEEPSEEK_API_BASE,
                 api_key=DEEPSEEK_API_KEY
@@ -44,10 +51,9 @@ def initialize_llm():
                 model=OLLAMA_MODEL,
                 base_url=OLLAMA_BASE_URL,
                 max_tokens=512,
-                temperature=0.3,
-                max_predict=1024,
-                # Add a reasonable timeout
-                timeout=30,
+                temperature=0,
+                max_predict=512,
+                timeout=60,
                 streaming=True
             )
 
@@ -70,11 +76,11 @@ def initialize_embeddings():
     print(f"Using Ollama Embeddings: model='{OLLAMA_MODEL}', base_url='{OLLAMA_BASE_URL}'")
     
     embeddings = OllamaEmbeddings(
-        model=OLLAMA_MODEL,
+        model=OLLAMA_EMBEDDING_MODEL,
         base_url=OLLAMA_BASE_URL
     )
     
-    print("Ollama Embeddings initialized successfully.")
+    print(f"Ollama Embeddings initialized successfully. Model: {OLLAMA_EMBEDDING_MODEL}")
     return embeddings
 
 # Initialize Pydantic output parser

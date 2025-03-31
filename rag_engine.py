@@ -14,13 +14,12 @@ llm = initialize_llm()
 
 # Prompt templates
 analysis_prompt_template = """
-You are a meticulous Project Compliance Analyst. Your task is to analyze the provided Document Context to determine if a specific Checklist Item is met for a given project phase.
+You are a meticulous Project Compliance Analyst. Your task is to analyze the provided Document Context to determine if a specific Checklist Item is met.
 
 **Checklist Item Details:**
 - ID: {check_id}
 - Name: {check_name}
 - Description: {check_description}
-- Phase: {check_phase}
 
 **Document Context:**
 --- START CONTEXT ---
@@ -30,48 +29,48 @@ You are a meticulous Project Compliance Analyst. Your task is to analyze the pro
 {additional_info}
 
 **Analysis Instructions:**
-1.  **Understand the Goal:** Read the Checklist Item Description carefully. What specific condition needs to be confirmed?
-2.  **Examine Context:** Search the Document Context for explicit statements or strong evidence directly related to the checklist item's condition.
-3.  **Determine Status (`is_met`):**
-    *   If the context clearly and unambiguously confirms the condition is met, set `is_met` to `true`.
-    *   If the context clearly confirms the condition is *not* met, or if the context lacks any relevant information or is too vague to make a determination, set `is_met` to `false`.
-4.  **Assess Reliability (`reliability`):** Provide a confidence score (0-100) based *only* on the provided context:
-    *   90-100: Direct, explicit confirmation/denial in the context. No ambiguity.
-    *   70-89: Strong evidence suggesting confirmation/denial, but requires minimal interpretation.
-    *   50-69: Context provides related information, but it's indirect or requires significant interpretation. Plausible but not certain.
-    *   0-49: Context is irrelevant, contradictory, very vague, or completely missing information about the check item.
-5.  **Extract Sources (`sources`):** Quote the *exact* sentences or short passages (max 2-3 relevant sentences per source) from the Document Context that are the primary evidence for your `is_met` decision and `reliability` score. If no specific sentences provide direct evidence, provide an empty list `[]`.
-6.  **Explain Reasoning (`analysis_details`):** Briefly explain *why* you reached the `is_met` conclusion and `reliability` score, referencing the evidence (or lack thereof) in the context.
+1. First, carefully understand the checklist item description. This is what you need to verify from the document.
+2. Search the Document Context for evidence related to this specific checklist item.
+3. Determine if the checklist item is met based ONLY on the evidence in the document:
+   - If there is clear evidence confirming the item is met, set is_met to true
+   - If there is evidence the item is NOT met or there's insufficient evidence, set is_met to false
+4. Rate your confidence in your determination with a reliability score (0-100):
+   - 90-100: Direct, explicit confirmation in the document
+   - 70-89: Strong evidence but requires some interpretation
+   - 50-69: Related information that suggests an answer but isn't conclusive
+   - 0-49: Very little or no relevant information in the document
+5. Include direct quotes from the document that support your determination as sources.
+6. Explain your reasoning in the analysis_details.
 
-**IMPORTANT: Do NOT include the check_item field in your response. Only provide is_met, reliability, sources, and analysis_details.**
+Respond with ONLY the following fields:
+1. is_met (true/false): Whether the checklist item requirements are met based on the document
+2. reliability (0-100): Your confidence in the determination
+3. sources (list of strings): Direct quotes from the document that support your determination
+4. analysis_details (string): Your reasoning for the determination
 
-**Output Format:**
+Output JSON format:
 {format_instructions}
 """
 
 question_prompt_template = """
-You are a meticulous Project Compliance Analyst. You're reviewing a checklist item but need additional information to make a confident determination.
+You are analyzing a checklist item but need additional information to make a confident determination.
 
-**Checklist Item Details:**
-- ID: {check_id}
-- Name: {check_name}
-- Description: {check_description}
-- Phase: {check_phase}
+**Checklist Item:**
+ID: {check_id}
+Name: {check_name}
+Description: {check_description}
 
-**Current Analysis Status:**
-- Current reliability score: {current_reliability}%
+**Current Status:**
+- Reliability: {current_reliability}%
 - Current determination: {is_met_status}
 - Current reasoning: {analysis_details}
 
-**Document Evidence:**
+**Available Evidence:**
 {sources_summary}
 
-Based on the above information, identify 1-3 specific questions that would help clarify whether this checklist item is met or not. Focus on questions that:
-1. Target the precise information gaps in the document
-2. Would significantly increase the reliability of your assessment
-3. Are directly relevant to determining if the checklist item is satisfied
-
-Format your response as a numbered list of questions only. Do not provide any additional text or explanations.
+Generate 1-3 specific questions that would help determine if this checklist item is met.
+Focus on questions that would address gaps in the available information.
+Format your response as a numbered list of questions ONLY - no additional text.
 """
 
 def format_docs(docs: List[Document]) -> str:
@@ -80,16 +79,26 @@ def format_docs(docs: List[Document]) -> str:
 
 def create_rag_chain():
     """Create and return the RAG chain for analyzing checks."""
+    # Create a custom format instruction that's simpler
+    simple_format_instructions = """
+{
+  "is_met": bool,  // true if the check item is met, false otherwise
+  "reliability": int,  // 0-100 confidence score
+  "sources": [string],  // List of quotes from the document that support your determination
+  "analysis_details": string  // Your reasoning
+}
+"""
+    
     analysis_prompt = PromptTemplate(
         template=analysis_prompt_template,
-        input_variables=["check_id", "check_name", "check_description", "check_phase", "context", "additional_info"],
-        partial_variables={"format_instructions": analysis_parser.get_format_instructions()}
+        input_variables=["check_id", "check_name", "check_description", "context", "additional_info"],
+        partial_variables={"format_instructions": simple_format_instructions}
     )
-
-    print(f"Prompt template: {analysis_prompt.template}")
-    print(f"Input variables: {analysis_prompt.input_variables}")
-    print(f"Partial variables: {analysis_prompt.partial_variables}")    
-    print(f"Format instructions: {analysis_parser.get_format_instructions()}")
+    
+    # Enable this for debugging:
+    # print(f"\n* * * Analysis Prompt Template:\n{analysis_prompt.template}")
+    # print(f"\n* * * Input Variables: {analysis_prompt.input_variables}")
+    # print(f"\n* * * Partial Variables: {analysis_prompt.partial_variables}\n\n")
     
     # This chain preserves streaming capabilities through the entire chain
     # The streaming happens via the callback manager that will be provided in the RunnableConfig
@@ -98,7 +107,7 @@ def create_rag_chain():
             context=lambda x: format_docs(x["retriever"].invoke(x["check_description"]))
         )
         | analysis_prompt
-        | llm  # streaming=True is already set in the llm instance
+        | llm  # Don't use with_config here, let the config be passed in directly
         | analysis_parser
     )
     
@@ -106,10 +115,20 @@ def create_rag_chain():
 
 def create_streaming_chain():
     """Create a streaming-only chain for token visibility."""
+    # Create a custom format instruction that's simpler
+    simple_format_instructions = """
+{
+  "is_met": bool,  // true if the check item is met, false otherwise
+  "reliability": int,  // 0-100 confidence score
+  "sources": [string],  // List of quotes from the document that support your determination
+  "analysis_details": string  // Your reasoning
+}
+"""
+
     analysis_prompt = PromptTemplate(
         template=analysis_prompt_template,
-        input_variables=["check_id", "check_name", "check_description", "check_phase", "context", "additional_info"],
-        partial_variables={"format_instructions": analysis_parser.get_format_instructions()}
+        input_variables=["check_id", "check_name", "check_description", "context", "additional_info"],
+        partial_variables={"format_instructions": simple_format_instructions}
     )
     
     # This chain only includes prompt + LLM without parsing
@@ -119,43 +138,67 @@ def create_streaming_chain():
             context=lambda x: format_docs(x["retriever"].invoke(x["check_description"]))
         )
         | analysis_prompt
-        | llm  # streaming=True is already set in the llm instance
+        | llm  # Don't use with_config here, let the config be passed in directly
     )
     
     return streaming_chain
 
-def generate_questions(check_item: CheckItem, result: CheckResult) -> str:
+def create_hybrid_rag_chain():
+    """Create a RAG chain that provides both streaming and structured output."""
+    # Create a custom format instruction that's simpler
+    simple_format_instructions = """
+{
+  "is_met": bool,  // true if the check item is met, false otherwise
+  "reliability": int,  // 0-100 confidence score
+  "sources": [string],  // List of quotes from the document that support your determination
+  "analysis_details": string  // Your reasoning
+}
+"""
+
+    analysis_prompt = PromptTemplate(
+        template=analysis_prompt_template,
+        input_variables=["check_id", "check_name", "check_description", "context", "additional_info"],
+        partial_variables={"format_instructions": simple_format_instructions}
+    )
+    
+    # Base retrieval and prompt formatting
+    base_chain = RunnablePassthrough.assign(
+        context=lambda x: format_docs(x["retriever"].invoke(x["check_description"]))
+    ) | analysis_prompt
+    
+    # The LLM step will stream tokens through callbacks
+    llm_output = base_chain | llm
+    
+    # Create a chain that returns both raw output and parsed result
+    def process_llm_output(llm_response):
+        # For LangChain's ChatModels that return a message, extract content
+        content = llm_response.content if hasattr(llm_response, "content") else llm_response
+        
+        # Parse the output into a structured format
+        try:
+            parsed_result = analysis_parser.parse(content)
+            return {
+                "raw_output": content,
+                "parsed_result": parsed_result
+            }
+        except Exception as e:
+            # Return the error while preserving the raw output
+            return {
+                "raw_output": content,
+                "parsing_error": str(e)
+            }
+    
+    # Final chain combining streaming and parsing
+    final_chain = llm_output | process_llm_output
+    
+    return final_chain
+
+def generate_questions(check_item: CheckItem, result: CheckResult, callback_manager=None) -> str:
     """Generate specific follow-up questions to improve reliability."""
     question_prompt = PromptTemplate(
-        template="""
-You are a Project Compliance Analyst Assistant. You need to generate specific, focused questions to gather information about a checklist item with low reliability.
-
-**Checklist Item Details:**
-- ID: {check_id}
-- Name: {check_name}
-- Description: {check_description}
-- Phase: {check_phase}
-
-**Current Analysis Status:**
-- Current reliability score: {current_reliability}%
-- Current determination: {is_met_status}
-- Current reasoning: {analysis_details}
-
-**Document Evidence:**
-{sources_summary}
-
-Generate 1-3 specific, targeted questions that would help increase reliability. The questions MUST:
-1. Focus on precise details that are missing from the document
-2. Ask for exact information directly related to confirming the checklist item
-3. Be answerable by a project manager with access to additional documentation
-
-DO NOT ask generic questions like "Can you provide more information?" or "Is there any additional context?".
-Instead, ask for specific measurements, confirmations, document references, or concrete details.
-
-Format your response as a numbered list of questions only. Do not provide any additional text or explanations.
-""",
+        template=question_prompt_template,
         input_variables=[
-            "check_id", "check_name", "check_description", "check_phase", 
+            "check_id", "check_name", "check_description", 
             "current_reliability", "is_met_status", "analysis_details", 
             "sources_summary"
         ]
@@ -168,11 +211,20 @@ Format your response as a numbered list of questions only. Do not provide any ad
         "check_id": check_item.id,
         "check_name": check_item.name,
         "check_description": check_item.description,
-        "check_phase": check_item.phase,
         "current_reliability": result.reliability,
         "is_met_status": is_met_status,
         "analysis_details": result.analysis_details,
         "sources_summary": sources_summary
     }
     
-    return llm.invoke(question_prompt.format(**question_input)).content 
+    # Set up config to include the callback_manager for streaming if provided
+    config = {}
+    if callback_manager:
+        try:
+            config["callbacks"] = [callback_manager]
+        except Exception as e:
+            print(f"Warning: Failed to set up callback manager for questions: {e}")
+    
+    # Directly use LLM for question generation with streaming
+    formatted_prompt = question_prompt.format(**question_input)
+    return llm.invoke(formatted_prompt, config=config).content 

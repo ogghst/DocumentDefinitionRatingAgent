@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>RAG Conversation Client</title>
+    <title>Checklist Assistant</title>
     <!-- Add markdown-it library for markdown rendering -->
     <script src="https://cdn.jsdelivr.net/npm/markdown-it@13.0.1/dist/markdown-it.min.js"></script>
     <!-- Add Google Fonts -->
@@ -372,25 +372,25 @@
 <body>
     <div class="container">
         <div class="header">
-            <h1>RAG Conversation Client</h1>
+            <h1>Checklist Assistant</h1>
             <div id="connection-status" class="status-badge">Disconnected</div>
         </div>
-        
-        <div id="setup">
-            <h3>Connect to Conversation</h3>
+    
+    <div id="setup">
+        <h3>Connect to Conversation</h3>
             <div style="display: flex; gap: 8px; margin-top: 16px;">
                 <div class="input-group">
                     <input type="text" id="conversation-id" placeholder="Enter Conversation ID">
-                    <button id="connect-btn">Connect</button>
+        <button id="connect-btn">Connect</button>
                 </div>
                 <button id="create-btn">Create New</button>
             </div>
         </div>
+    
+    <div id="conversation" style="display:none;">
+        <h3 id="conversation-title">Conversation</h3>
         
-        <div id="conversation" style="display:none;">
-            <h3 id="conversation-title">Conversation</h3>
-            
-            <div id="messages"></div>
+        <div id="messages"></div>
             
             <div id="inputResponseForm">
                 <div class="input-prompt"></div>
@@ -408,15 +408,16 @@
                     <button id="submitResponseBtn">Submit Response</button>
                 </div>
             </div>
-            
-            <div id="controls">
-                <button id="start-btn">Start RAG Analysis</button>
+        
+        <div id="controls">
+            <button id="start-btn">Start RAG Analysis</button>
+                <button id="debug-input-btn" style="background-color: #9333ea; margin-left: 10px;">Debug: Show Input Form</button>
                 <!--<div class="input-group">
-                    <input type="text" id="message-input" placeholder="Type a message...">
-                    <button id="send-btn">Send</button>
+            <input type="text" id="message-input" placeholder="Type a message...">
+            <button id="send-btn">Send</button>
                 </div>-->
             </div>
-        </div>
+    </div>
     </div>
     
     <script>
@@ -572,6 +573,20 @@
             
             // Append the token to the current stream
             currentStreamDiv.textContent += token;
+            
+            // Use markdown rendering for better readability during streaming
+            try {
+                // Only re-render periodically to improve performance
+                if (token.includes('\n') || token.includes('.') || token.includes('!') || token.includes('?')) {
+                    const parentDiv = currentStreamDiv.parentElement.querySelector('.markdown-content');
+                    if (parentDiv) {
+                        parentDiv.innerHTML = md.render(currentStreamDiv.textContent);
+                    }
+                }
+            } catch (e) {
+                console.error("Error rendering markdown during streaming:", e);
+            }
+            
             scrollToBottom();
         }
         
@@ -587,26 +602,52 @@
             typeSpan.textContent = 'RAG';
             streamContainer.appendChild(typeSpan);
             
-            // Create the token stream content div
+            // Create the token stream content div (hidden, used to store raw text)
             const tokenDiv = document.createElement('div');
             tokenDiv.className = 'token-stream';
             tokenDiv.textContent = '';
+            tokenDiv.style.display = 'none'; // Hide the raw text
             streamContainer.appendChild(tokenDiv);
+            
+            // Create a div for rendered markdown content
+            const markdownDiv = document.createElement('div');
+            markdownDiv.className = 'markdown-content';
+            streamContainer.appendChild(markdownDiv);
             
             // Add to messages
             messagesDiv.appendChild(streamContainer);
             
-            // Update state
-            isStreamingTokens = true;
+            // Set the current stream div and mark as streaming
             currentStreamDiv = tokenDiv;
+            isStreamingTokens = true;
+            
             scrollToBottom();
         }
         
-        // End the current token stream
+        // Finish the current token stream
         function finishTokenStream() {
             if (isStreamingTokens && currentStreamDiv) {
+                console.log('Finishing token stream');
+                
+                // Get the final content and render it with markdown
+                const finalContent = currentStreamDiv.textContent;
+                const markdownDiv = currentStreamDiv.parentElement.querySelector('.markdown-content');
+                
+                if (markdownDiv) {
+                    try {
+                        markdownDiv.innerHTML = md.render(finalContent);
+                    } catch (e) {
+                        console.error("Error rendering markdown in token stream:", e);
+                        markdownDiv.textContent = finalContent; // Fallback to plain text
+                    }
+                }
+                
+                // Reset the state
                 isStreamingTokens = false;
                 currentStreamDiv = null;
+                
+                // Scroll to ensure visibility
+                scrollToBottom();
             }
         }
         
@@ -693,15 +734,15 @@
                 div.appendChild(contentDiv);
             } else {
                 // Create type label for non-user messages
-                const typeSpan = document.createElement('span');
-                typeSpan.className = 'message-type';
+            const typeSpan = document.createElement('span');
+            typeSpan.className = 'message-type';
                 typeSpan.textContent = message.type || 'unknown';
-                
-                // Create content container
-                const contentDiv = document.createElement('div');
-                
-                // Handle different content types
-                if (typeof message.content === 'string') {
+            
+            // Create content container
+            const contentDiv = document.createElement('div');
+            
+            // Handle different content types
+            if (typeof message.content === 'string') {
                     // Determine if we should render markdown based on message type
                     if (message.type === 'input_request') {
                         // For input requests, render as markdown
@@ -709,10 +750,10 @@
                         contentDiv.innerHTML = md.render(message.content);
                     } else {
                         // For other types like system messages, use plain text
-                        contentDiv.textContent = message.content;
+                contentDiv.textContent = message.content;
                     }
-                } else {
-                    contentDiv.innerHTML = '<pre>' + JSON.stringify(message, null, 2) + '</pre>';
+            } else {
+                contentDiv.innerHTML = '<pre>' + JSON.stringify(message, null, 2) + '</pre>';
                 }
                 
                 div.appendChild(typeSpan);
@@ -749,7 +790,7 @@
         // Add a system message (client-generated)
         function addSystemMessage(content) {
             const div = document.createElement('div');
-            div.className = 'message system';
+            div.className = 'message';
             div.textContent = content;
             
             messagesDiv.appendChild(div);
@@ -763,20 +804,20 @@
             
             // Set a clear prompt
             const promptElement = document.createElement('div');
-            promptElement.className = 'input-prompt markdown-content';
+            promptElement.className = 'markdown-content';
             
             // Render the prompt message as markdown
             promptElement.innerHTML = md.render(message) + 
                 '<p><em>You can use Markdown formatting in your response</em></p>';
             
-            // Clear any previous prompt
-            const existingPrompt = inputResponseForm.querySelector('.input-prompt');
-            if (existingPrompt) {
-                existingPrompt.innerHTML = '';
-                existingPrompt.appendChild(promptElement);
-            } else {
-                inputResponseForm.querySelector('.input-prompt').appendChild(promptElement);
-            }
+            // Get the input-prompt element
+            const inputPromptElement = inputResponseForm.querySelector('.input-prompt');
+            
+            // Clear any previous content
+            inputPromptElement.innerHTML = '';
+            
+            // Add the new prompt to the input-prompt div
+            inputPromptElement.appendChild(promptElement);
             
             // Focus the textarea for input
             responseInput.focus();
@@ -790,38 +831,54 @@
             waitingIndicator.textContent = 'RAG Analysis Paused: Waiting for your input...';
             messagesDiv.appendChild(waitingIndicator);
             scrollToBottom();
+            
+            // Debug info
+            console.log("Input request form displayed");
+            console.log("Submit button:", document.getElementById('submitResponseBtn'));
         }
         
         // Submit response for the input request
         function submitResponse() {
-            if (!socket || socket.readyState !== WebSocket.OPEN) return;
+            console.log("Submit response function called");
+            
+            if (!socket || socket.readyState !== WebSocket.OPEN) {
+                console.error("Cannot submit response: Socket not connected");
+                alert("Cannot submit response: Not connected to server");
+                return;
+            }
             
             const content = responseInput.value.trim();
+            console.log("Response content:", content ? content.substring(0, 50) + "..." : "(empty)");
+            
             if (!content) {
                 // If empty, ask for confirmation before skipping
                 if (!confirm('You haven\'t entered any response. Do you want to skip this question?')) {
                     return;
                 }
+                console.log("User confirmed skipping the question");
             }
             
+            try {
             // Send via WebSocket with the input_response type
-            socket.send(JSON.stringify({
+                const message = JSON.stringify({
                 type: 'input_response',
                 content: content || 'skip' 
-            }));
+                });
+                console.log("Sending message:", message);
+                socket.send(message);
             
             // Add user's response to message history
             const responseDiv = document.createElement('div');
             responseDiv.className = 'message user';
-            
-            // Create a container for formatted content
-            const responseContent = document.createElement('div');
-            responseContent.className = 'markdown-content';
-            
-            // Add markdown-rendered content
-            responseContent.innerHTML = content ? md.render(content) : '<em>(skipped)</em>';
-            
-            responseDiv.appendChild(responseContent);
+                
+                // Create a container for formatted content
+                const responseContent = document.createElement('div');
+                responseContent.className = 'markdown-content';
+                
+                // Add markdown-rendered content
+                responseContent.innerHTML = content ? md.render(content) : '<em>(skipped)</em>';
+                
+                responseDiv.appendChild(responseContent);
             messagesDiv.appendChild(responseDiv);
             
             // Hide the input form and clear it
@@ -831,10 +888,15 @@
             // Add a message that we've submitted
             const submitDiv = document.createElement('div');
             submitDiv.className = 'message system';
-            submitDiv.textContent = 'Response submitted. RAG analysis continuing...';
+                submitDiv.textContent = 'Response submitted. RAG analysis continuing...';
             messagesDiv.appendChild(submitDiv);
             
             scrollToBottom();
+                console.log("Response successfully submitted");
+            } catch (error) {
+                console.error("Error submitting response:", error);
+                alert("Error submitting response: " + error.message);
+            }
         }
         
         // Event listeners
@@ -845,21 +907,52 @@
         
         document.getElementById('create-btn').addEventListener('click', createConversation);
         document.getElementById('start-btn').addEventListener('click', startRagAnalysis);
-        document.getElementById('send-btn').addEventListener('click', sendMessage);
-        document.getElementById('submitResponseBtn').addEventListener('click', submitResponse);
         
-        // Enter key for sending messages
-        document.getElementById('message-input').addEventListener('keypress', (e) => {
+        // Make sure the submitResponseBtn listener is properly set up
+        const submitResponseBtn = document.getElementById('submitResponseBtn');
+        if (submitResponseBtn) {
+            submitResponseBtn.addEventListener('click', submitResponse);
+            console.log("Submit response button event listener attached");
+        } else {
+            console.error("Submit response button not found in the DOM");
+        }
+        
+        // Add event listeners when the DOM is fully loaded
+        document.addEventListener('DOMContentLoaded', () => {
+            const submitBtn = document.getElementById('submitResponseBtn');
+            if (submitBtn) {
+                submitBtn.addEventListener('click', submitResponse);
+                console.log("Submit button listener attached on DOMContentLoaded");
+            }
+            
+            // Add debug button for manual testing
+            const debugInputBtn = document.getElementById('debug-input-btn');
+            if (debugInputBtn) {
+                debugInputBtn.addEventListener('click', () => {
+                    console.log("Debug button clicked - showing input form");
+                    showInputRequestForm("This is a test prompt. *Please* respond with any text to test the form.");
+                });
+            }
+            
+            // Also set up the message input event listener
+            const messageInput = document.getElementById('message-input');
+            if (messageInput) {
+                messageInput.addEventListener('keypress', (e) => {
             if (e.key === 'Enter') {
                 sendMessage();
+                    }
+                });
             }
-        });
-        
-        // Enter key for submitting responses
-        document.getElementById('responseInput').addEventListener('keypress', (e) => {
-            if (e.key === 'Enter' && e.ctrlKey) {
-                submitResponse();
-                e.preventDefault();
+            
+            // Set up the response input event listener for Ctrl+Enter
+            const responseInputElem = document.getElementById('responseInput');
+            if (responseInputElem) {
+                responseInputElem.addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter' && e.ctrlKey) {
+                        submitResponse();
+                        e.preventDefault();
+                    }
+                });
             }
         });
         

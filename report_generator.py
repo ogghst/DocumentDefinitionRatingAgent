@@ -511,6 +511,29 @@ class ChecklistReportGenerator:
         print(f"PDF report generated: {self.output_pdf_path}")
         return self.output_pdf_path
 
+async def generate_pdf_report(results: list, output_pdf_path: str) -> None:
+    """Generate a PDF report from the analysis results.
+    
+    Args:
+        results: List of analysis results
+        output_pdf_path: Path where to save the PDF report
+    """
+    # Create a temporary JSON file with the results
+    import tempfile
+    import os
+    
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as temp_json:
+        json.dump(results, temp_json, indent=2)
+        temp_json_path = temp_json.name
+    
+    try:
+        # Create the report generator and generate the PDF
+        generator = ChecklistReportGenerator(temp_json_path, output_pdf_path)
+        generator.generate_pdf()
+    finally:
+        # Clean up the temporary JSON file
+        os.unlink(temp_json_path)
+
 if __name__ == "__main__":
     # Get the latest results file
     json_files = [f for f in os.listdir('.') if f.startswith('analysis_results_') and f.endswith('.json')]

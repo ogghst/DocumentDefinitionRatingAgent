@@ -3,6 +3,9 @@ import pandas as pd
 import traceback
 import asyncio
 from typing import List, Optional, Dict, Any
+from pathlib import Path
+import json
+from datetime import datetime
 
 from langchain_core.runnables import RunnableConfig, RunnableLambda
 from langgraph.graph import StateGraph, END
@@ -10,9 +13,18 @@ from typing_extensions import Annotated, TypedDict
 
 from models import CheckItem, CheckResult
 from document_processor import load_document, create_retriever
-from rag_engine import create_rag_chain, generate_questions, create_streaming_chain
+from rag_engine import create_hybrid_rag_chain, generate_questions, create_streaming_chain
 from common import broadcast_message, get_user_input
 from models import GraphState
+from report_generator import generate_pdf_report
+
+# Import WebsocketCallbackManager - add this with try/except to handle optional dependency
+try:
+    from websocket_callbacks import WebsocketCallbackManager
+except ImportError:
+    # Create a stub class if the real one isn't available
+    class WebsocketCallbackManager:
+        pass
 
 # Node Functions
 async def load_and_filter_checklist(state: GraphState) -> GraphState:
@@ -129,45 +141,38 @@ async def load_index_document(state: GraphState) -> GraphState:
     return state
 
 async def analyze_check_rag(check_item: CheckItem, config: RunnableConfig) -> CheckResult:
-    """
-    Analyzes a single check item using RAG against the indexed document.
-    Designed to be called via LangGraph's map functionality.
-    """
-    await broadcast_message(f"\n--- Analyzing Check ID: {check_item.id} ({check_item.name}) ---")
+    """Analyze a single check item using RAG, with interactive human review if needed."""
     
-    # Access the shared state (including the retriever) from the config
-    state: GraphState = config['configurable']
-    retriever = state.get('retriever')
-    
-    # Get conversation ID from the config if available for user input
-    conversation_id = None
     callback_manager = None
+    conversation_id = None
+    retriever = None
     
-    # Extract conversation_id from metadata
-    if config.get('metadata') and isinstance(config['metadata'], dict):
-        conversation_id = config['metadata'].get('conversation_id')
-        
-        # If we have a conversation_id, try to get the callback manager
-        if conversation_id:
-            try:
-                from websocket_server import conversation_callbacks
-                callback_manager = conversation_callbacks.get(conversation_id)
-                if callback_manager:
-                    print(f"Using callback manager for conversation {conversation_id}")
-            except (ImportError, Exception) as e:
-                print(f"Could not access callback manager: {e}")
+    # Extract our callback manager and conversation ID from config metadata
+    if "metadata" in config:
+        metadata = config["metadata"]
+        if "conversation_id" in metadata:
+            conversation_id = metadata["conversation_id"]
+            
+        if "retriever" in metadata:
+            retriever = metadata["retriever"]
+            
+        if "callback_manager" in metadata:
+            callback_manager = metadata["callback_manager"]
     
-    # Pre-computation checks
+    # If retriever not in metadata, try to get from configurable
+    if not retriever and "configurable" in config:
+        retriever = config["configurable"].get("retriever")
+    
     if not retriever:
-        await broadcast_message(f"ERROR: Retriever not available for check ID {check_item.id}. Skipping analysis.")
+        await broadcast_message(f"ERROR: No retriever found in config for check ID {check_item.id}")
         return CheckResult(
             check_item=check_item, is_met=None, reliability=0.0, sources=[],
-            analysis_details="Analysis skipped: Document retriever not initialized.",
+            analysis_details="Analysis failed: No document retriever available",
             needs_human_review=True
         )
     
     # Create the RAG chain
-    rag_chain = create_rag_chain()
+    hybrid_rag_chain = create_hybrid_rag_chain()
     
     try:
         # Prepare for interactive analysis
@@ -176,6 +181,7 @@ async def analyze_check_rag(check_item: CheckItem, config: RunnableConfig) -> Ch
         attempt = 0
         user_provided_input = False  # Track if the user has already provided input
         prev_reliability = 0  # Track previous reliability score
+        saved_user_input = None  # Save the user's input across attempts
         
         while attempt < max_attempts:
             # Prepare chain input
@@ -183,27 +189,55 @@ async def analyze_check_rag(check_item: CheckItem, config: RunnableConfig) -> Ch
                 "check_id": check_item.id,
                 "check_name": check_item.name,
                 "check_description": check_item.description,
-                "check_phase": check_item.phase,
                 "additional_info": additional_info,
                 "retriever": retriever
             }
             
             # Now run the actual chain with parser for structured results
-            result = await rag_chain.ainvoke(chain_input, config=config)
+            # Set up config to include the callback_manager for streaming
+            chain_config = {}
             
-            # Add check_item back (it's not included in the LLM output)
-            result.check_item = check_item
+            if callback_manager:
+                try:
+                    # Use directly as a callback handler
+                    chain_config["callbacks"] = [callback_manager]
+                except Exception as e:
+                    await broadcast_message(f"Warning: Failed to set up callback manager: {e}")
+                    
+            # Pass any metadata needed
+            chain_config["metadata"] = {"conversation_id": conversation_id}
+            
+            # Run the chain with the appropriate config
+            result = await hybrid_rag_chain.ainvoke(chain_input, config=chain_config)
+            
+            # Extract the parsed result from the hybrid output
+            if "parsed_result" in result:
+                check_result = result["parsed_result"]
+                check_result.check_item = check_item  # Add back the check item
+            elif "parsing_error" in result:
+                # Handle parsing errors
+                await broadcast_message(f"Error parsing LLM output: {result['parsing_error']}")
+                check_result = CheckResult(
+                    check_item=check_item,
+                    is_met=False,
+                    reliability=0,
+                    analysis_details=f"Failed to parse LLM output: {result['parsing_error']}",
+                    needs_human_review=True
+                )
+            
+            # Preserve user input across attempts
+            if saved_user_input is not None:
+                check_result.user_input = saved_user_input
             
             # Check if reliability has improved from the previous attempt
-            reliability_improved = result.reliability > prev_reliability
+            reliability_improved = check_result.reliability > prev_reliability
             
             # Only check for human review if:
-            # 1. This is the first attempt, OR
-            # 2. User hasn't provided input yet, OR
-            # 3. Reliability has significantly improved from the previous attempt
+            # 1. Reliability is low, AND
+            # 2. Either this is the first attempt OR user hasn't provided input yet OR reliability hasn't improved
             needs_human_input = (
-                result.reliability < 50 and 
-                (attempt == 0 or not user_provided_input or reliability_improved)
+                (check_result.reliability < 50) and 
+                (attempt == 0 or not user_provided_input or not reliability_improved)
             )
             
             # If we're not making progress with reliability, or user already provided input 
@@ -211,20 +245,24 @@ async def analyze_check_rag(check_item: CheckItem, config: RunnableConfig) -> Ch
             if not needs_human_input:
                 # Accept the result even if reliability is low
                 # Mark as needing human review in the final results if reliability < 50
-                if result.reliability < 50:
-                    result.needs_human_review = True
-                    await broadcast_message(f"Low reliability for check ID {check_item.id}: {result.reliability}%. Accepting result without further user input.")
+                if check_result.reliability < 50:
+                    check_result.needs_human_review = True
+                    await broadcast_message(f"Low reliability for check ID {check_item.id}: {check_result.reliability}%. Accepting result without further user input.")
+                    
+                    # Ensure user_input field is set to indicate no input was requested
+                    if check_result.user_input is None:
+                        check_result.user_input = "No input requested - automated assessment accepted"
                 break
                 
             # Update previous reliability score
-            prev_reliability = result.reliability
+            prev_reliability = check_result.reliability
             
             # We need human review
-            result.needs_human_review = True
-            await broadcast_message(f"Low reliability for check ID {check_item.id}: {result.reliability}%")
+            check_result.needs_human_review = True
+            await broadcast_message(f"Low reliability ({check_result.reliability}%) for check ID {check_item.id}: Requesting human input")
             
             # Ask if the user wants to continue or provide more info
-            questions = generate_questions(check_item, result)
+            questions = generate_questions(check_item, check_result, callback_manager)
             
             user_prompt = f"""
 # Low Reliability Assessment for Check #{check_item.id}
@@ -235,10 +273,10 @@ The system cannot confidently determine if this check is met based on the docume
 - ID: {check_item.id}
 - Name: {check_item.name}
 - Description: {check_item.description}
-- Current Reliability: {result.reliability}%
+- Current Reliability: {check_result.reliability}%
 
 ## Current Assessment:
-{result.analysis_details}
+{check_result.analysis_details}
 
 ## To resolve this, please answer one of these specific questions:
 {questions}
@@ -252,10 +290,20 @@ Enter "1" to accept and continue, or type your answer to the question(s) above:
             
             # Try to use the callback manager for user input first (direct websocket)
             if callback_manager:
-                user_response = await callback_manager.get_user_input(user_prompt)
+                try:
+                    user_response = await callback_manager.get_user_input(user_prompt)
+                except Exception as e:
+                    await broadcast_message(f"Error getting user input via callback manager: {e}")
+                    user_response = "timeout"
+                    check_result.user_input = f"Input request failed: {str(e)}"
             else:
                 # Fallback to standard get_user_input (might use websocket or console)
-                user_response = await get_user_input(user_prompt, conversation_id)
+                try:
+                    user_response = await get_user_input(user_prompt, conversation_id)
+                except Exception as e:
+                    await broadcast_message(f"Error getting user input: {e}")
+                    user_response = "timeout"
+                    check_result.user_input = f"Input request failed: {str(e)}"
             
             # Mark that user provided input
             user_provided_input = True
@@ -263,7 +311,8 @@ Enter "1" to accept and continue, or type your answer to the question(s) above:
             if user_response in ["1", "skip", "continue", "accept"]:
                 await broadcast_message(f"User chose to accept the current result for check ID {check_item.id}")
                 # Record the exact user response
-                result.user_input = user_response
+                check_result.user_input = user_response
+                saved_user_input = user_response
                 break
             elif user_response in ["2", "improve"]:
                 await broadcast_message(f"User chose to provide more information...")
@@ -276,7 +325,8 @@ Enter "1" to accept and continue, or type your answer to the question(s) above:
                     additional_info = await get_user_input(info_prompt, conversation_id)
                 
                 # Record the exact user input without any modification
-                result.user_input = additional_info
+                check_result.user_input = additional_info
+                saved_user_input = additional_info  # Save it for subsequent attempts
                 
                 # Add to the context for the next attempt
                 await broadcast_message(f"Retrying analysis with additional information...")
@@ -285,13 +335,26 @@ Enter "1" to accept and continue, or type your answer to the question(s) above:
             else:
                 # User provided specific information - store exactly as provided
                 additional_info = user_response
-                result.user_input = user_response
+                check_result.user_input = user_response
+                saved_user_input = user_response  # Save it for subsequent attempts
                 await broadcast_message(f"Retrying analysis with user information...")
                 attempt += 1
                 continue
         
         # Final result with proper determination
-        return result
+        # Ensure needs_human_review remains true if human input was provided
+        if user_provided_input:
+            check_result.needs_human_review = True
+            
+        # IMPORTANT: Never overwrite actual user input with generic messages
+        # Only set the generic message if no user input was recorded
+        if check_result.user_input is None and check_result.needs_human_review:
+            check_result.user_input = "No input requested - automated assessment accepted"
+            
+        # Add debugging information
+        await broadcast_message(f"Final result for check ID {check_item.id} - user_input: '{check_result.user_input}'")
+            
+        return check_result
     except Exception as e:
         await broadcast_message(f"ERROR during RAG analysis for check ID {check_item.id}: {e}")
         await broadcast_message(f"RAG Chain Error: {str(e)}")
@@ -305,93 +368,54 @@ Enter "1" to accept and continue, or type your answer to the question(s) above:
         )
 
 async def format_final_output(state: GraphState) -> GraphState:
-    """Formats the results list into the final JSON structure, saves to JSON file, and generates PDF report."""
-    await broadcast_message(f"\n--- Node: format_final_output ---")
-
-    if error_message := state.get("error_message"):
-        await broadcast_message(f"Workflow finished with error: {error_message}")
-        state["final_results"] = [{"error": error_message}]
-        return state
-
-    analysis_results = state.get("analysis_results")
-
-    if analysis_results is None:
-         if not state.get("checks_for_phase"):
-             message = f"No checklist items found for the specified phase '{state['target_phase']}'. No analysis performed."
-             await broadcast_message(message)
-             state["final_results"] = [{"message": message}]
-         else:
-             await broadcast_message("Warning: Analysis results list is missing, but checks existed.")
-             state["final_results"] = [{"warning": "Analysis results are unexpectedly missing."}]
-         return state
-
-    if not isinstance(analysis_results, list):
-        await broadcast_message(f"Warning: 'analysis_results' is not a list (type: {type(analysis_results)}). Attempting to format anyway.")
-        state["final_results"] = [{"error": "Internal state error: analysis_results is not a list."}]
-        return state
-
-    # Convert Pydantic models to dictionaries for JSON serialization
-    output_list = []
-    valid_results_count = 0
-    human_review_count = 0
-
-    for i, result in enumerate(analysis_results):
-        if isinstance(result, CheckResult):
-            output_list.append(result.dict(exclude_none=True)) 
-            valid_results_count += 1
-            if result.needs_human_review:
-                human_review_count += 1
-        else:
-            await broadcast_message(f"Warning: Item at index {i} in analysis_results is not a CheckResult object: {result}")
-            output_list.append({"error": "Invalid result object received from analysis step.", "details": str(result)})
-
-    state["final_results"] = output_list
-    await broadcast_message(f"Formatted {valid_results_count} valid results.")
-
-    # Log summary about human review items
-    if valid_results_count > 0:
-        if human_review_count > 0:
-            await broadcast_message(f"SUMMARY: {human_review_count} out of {valid_results_count} analyzed checks require human review (Reliability < 50%).")
-        else:
-            await broadcast_message(f"SUMMARY: All {valid_results_count} analyzed checks met the reliability threshold (>= 50%).")
-    
-    # Save results to JSON file
-    import json
-    import os
-    from datetime import datetime
-    
-    # Create output directory if it doesn't exist
-    os.makedirs('output', exist_ok=True)
-    
-    # Generate a timestamp for the filename
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    
-    # Create the JSON filename
-    json_filename = f"output/analysis_results_{timestamp}.json"
-    
-    # Save the results to the JSON file
+    """Format the final output and save results to JSON file."""
     try:
-        with open(json_filename, 'w') as f:
-            json.dump(state["final_results"], f, indent=2)
-        await broadcast_message(f"Results saved to JSON file: {json_filename}")
+        if not state.get("analysis_results"):
+            state["error_message"] = "No analysis results to format"
+            return state
+            
+        # Convert results to dictionaries, ensuring all fields are properly handled
+        results = []
+        for result in state["analysis_results"]:
+            result_dict = result.model_dump()
+            
+            # Ensure needs_human_review is properly set based on whether human input was provided
+            if result_dict.get("user_input") is not None and result_dict.get("user_input") != "No input requested - automated assessment accepted":
+                result_dict["needs_human_review"] = True
+                
+            # IMPORTANT: Only set the generic message if no user input was recorded
+            # Never overwrite actual user input with generic messages
+            if result_dict.get("user_input") is None and result_dict.get("needs_human_review"):
+                result_dict["user_input"] = "No input requested - automated assessment accepted"
+                
+            results.append(result_dict)
+            
+        # Save to JSON file
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        output_dir = Path("output")
+        output_dir.mkdir(exist_ok=True)
+        
+        json_path = output_dir / f"analysis_results_{timestamp}.json"
+        with open(json_path, "w", encoding="utf-8") as f:
+            json.dump(results, f, indent=2, ensure_ascii=False)
+            
+        await broadcast_message(f"Results saved to JSON file: {json_path}")
+        
+        # Generate PDF report
+        pdf_path = output_dir / f"analysis_results_{timestamp}_report.pdf"
+        try:
+            await generate_pdf_report(results, str(pdf_path))
+            await broadcast_message(f"PDF report generated: {pdf_path}")
+        except Exception as e:
+            await broadcast_message(f"Warning: Failed to generate PDF report: {e}")
+            # Continue even if PDF generation fails
+        
+        state["final_results"] = results
+        return state
+        
     except Exception as e:
-        await broadcast_message(f"Error saving results to JSON file: {e}")
-    
-    # Generate PDF report
-    try:
-        from report_generator import ChecklistReportGenerator
-        
-        # Create the report generator instance
-        report_generator = ChecklistReportGenerator(json_filename)
-        
-        # Generate the PDF report
-        pdf_path = report_generator.generate_pdf()
-        
-        await broadcast_message(f"PDF report generated: {pdf_path}")
-    except Exception as e:
-        await broadcast_message(f"Error generating PDF report: {e}")
-        
-    return state
+        state["error_message"] = f"Error formatting final output: {str(e)}"
+        return state
 
 async def analyze_checks_map_function(state: GraphState) -> GraphState:
     """Takes all checks and maps the analyze function over them with proper state config."""
@@ -404,8 +428,19 @@ async def analyze_checks_map_function(state: GraphState) -> GraphState:
         state["analysis_results"] = []
         return state
     
-    # Create a config with the current state for each analysis
-    config = {"configurable": state}
+    # Extract the callback manager and conversation ID if they exist in the state
+    callback_manager = state.get("callback_manager")
+    conversation_id = state.get("conversation_id")
+    
+    # Create a base config without callbacks to avoid AsyncCallbackManager conversion errors
+    config = {
+        "configurable": state,
+        "metadata": {
+            "conversation_id": conversation_id,
+            "retriever": state.get("retriever"),
+            "callback_manager": callback_manager  # Pass as metadata instead
+        }
+    }
     
     # Map the analysis function over each check with proper configuration
     results = []
@@ -417,6 +452,7 @@ async def analyze_checks_map_function(state: GraphState) -> GraphState:
             await broadcast_message(f"Successfully analyzed check ID {check.id}")
         except Exception as e:
             await broadcast_message(f"Error analyzing check ID {check.id}: {e}")
+            traceback.print_exc()  # Print full traceback for debugging
             # Create a placeholder result for failed checks
             results.append(CheckResult(
                 check_item=check, is_met=None, reliability=0.0, sources=[],

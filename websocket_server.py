@@ -111,7 +111,7 @@ def remove_connection(websocket: WebSocket, conversation_id: str):
                 conv.owner_connection = None
 
 # ---- Message Broadcasting ----
-async def broadcast_to_conversation(conversation_id: str, message: str, message_type: str = "text", rag_message: bool = False):
+async def send_message(conversation_id: str, message: str, message_type: str = "text", rag_message: bool = False):
     """Send a message to clients in a conversation.
     
     Args:
@@ -124,7 +124,7 @@ async def broadcast_to_conversation(conversation_id: str, message: str, message_
     if message_type == "rag_token":
         print(f"[TOKEN] {message}")
     else:
-        print(f"[BROADCAST] {conversation_id}: {message_type} - {message[:50]}...")
+        print(f"[MESSAGE] {conversation_id}: {message_type} - {message[:50]}...")
     
     # Early return if conversation doesn't exist
     if conversation_id not in conversations:
@@ -149,16 +149,9 @@ async def broadcast_to_conversation(conversation_id: str, message: str, message_
     
     # Target connection(s)
     target_connection = None
-    if rag_message and conv.owner_connection:
+    if conv.owner_connection:
         # For RAG messages, only send to the owner
         target_connection = conv.owner_connection
-    else:
-        # For other messages, send to all connections
-        for connection in conv.connections:
-            try:
-                await connection.send_text(json_message)
-            except Exception as e:
-                print(f"Error sending to connection: {e}")
     
     # Send to owner for RAG messages
     if target_connection:
@@ -199,6 +192,14 @@ async def run_rag_workflow(conversation_id: str, background_tasks: BackgroundTas
         )
         conversation_callbacks[conversation_id] = callback_manager
         
+        # Tell the client we'll be streaming tokens
+        streaming_message = {
+            "type": "system",
+            "content": "Token streaming enabled. You will see the AI's responses as they are generated.",
+            "timestamp": datetime.now().isoformat()
+        }
+        await conversation.owner_connection.send_text(json.dumps(streaming_message))
+        
         # Create workflow graph
         app = create_workflow_graph()
         
@@ -206,14 +207,18 @@ async def run_rag_workflow(conversation_id: str, background_tasks: BackgroundTas
         inputs = GraphState(
             checklist_path=conversation.checklist_path,
             document_path=conversation.document_path,
-            target_phase=conversation.target_phase
+            target_phase=conversation.target_phase,
+            callback_manager=callback_manager,
+            conversation_id=conversation_id
         )
         
         # Configure and run graph with proper callback handler
         config = RunnableConfig(
             recursion_limit=25,
-            callbacks=[callback_manager],
-            metadata={"conversation_id": conversation_id}  # Include conversation_id in metadata
+            callbacks=[callback_manager],  # Use directly as a callback
+            metadata={
+                "conversation_id": conversation_id
+            }
         )
         
         # Run the workflow
@@ -290,7 +295,7 @@ async def get_user_input(conversation_id: str, prompt: str) -> str:
         return "skip"
     
     # First, notify the client that we're pausing for input
-    await broadcast_to_conversation(
+    await send_message(
         conversation_id, 
         "RAG analysis paused: Waiting for human input...", 
         "rag_progress", 
@@ -298,7 +303,7 @@ async def get_user_input(conversation_id: str, prompt: str) -> str:
     )
     
     # Send prompt to the owner only
-    await broadcast_to_conversation(conversation_id, prompt, "input_request", rag_message=True)
+    await send_message(conversation_id, prompt, "input_request", rag_message=True)
     
     # Create an event to wait for the response
     input_received = asyncio.Event()
@@ -348,7 +353,7 @@ async def get_user_input(conversation_id: str, prompt: str) -> str:
         
         # Notify that input was received
         if user_response[0] != "skip":
-            await broadcast_to_conversation(
+            await send_message(
                 conversation_id, 
                 "Input received. Resuming RAG analysis...", 
                 "rag_progress", 
@@ -356,7 +361,7 @@ async def get_user_input(conversation_id: str, prompt: str) -> str:
             )
             print(f"Human input received: {user_response[0][:50]}...")
         else:
-            await broadcast_to_conversation(
+            await send_message(
                 conversation_id, 
                 "Input skipped. Resuming RAG analysis...", 
                 "rag_progress", 
@@ -369,7 +374,7 @@ async def get_user_input(conversation_id: str, prompt: str) -> str:
     except asyncio.TimeoutError:
         # Timeout occurred
         print(f"Timeout waiting for human input in conversation {conversation_id}")
-        await broadcast_to_conversation(
+        await send_message(
             conversation_id, 
             "Timeout waiting for input. Resuming RAG analysis...", 
             "rag_progress", 
@@ -467,7 +472,7 @@ async def send_message(conversation_id: str, message: MessageRequest):
     if conversation_id not in conversations:
         raise HTTPException(status_code=404, detail="Conversation not found")
     
-    await broadcast_to_conversation(conversation_id, message.content, "user")
+    await send_message(conversation_id, message.content, "user")
     
     return {"status": "sent", "conversation_id": conversation_id}
 
@@ -649,10 +654,10 @@ def run_server():
 if __name__ == "__main__":
     try:
         print("Starting RAG Conversation Server...")
-        print("Checking for circular imports...")
+        # print("Checking for circular imports...")
         # Import graph_nodes here to test for circular imports
         import graph_nodes
-        print("No circular imports detected.")
+        # print("No circular imports detected.")
         run_server()
     except ImportError as e:
         print(f"Import error detected: {e}")

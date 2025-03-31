@@ -13,15 +13,14 @@ class CheckItem(BaseModel):
     phase: Optional[str] = Field(..., description="The project phase this check instance belongs to.")
 
 class CheckResult(BaseModel):
-    """Represents the analysis result for a single check item based on document review."""
-    check_item: Optional[CheckItem] = Field(None, description="The original checklist item being analyzed. Can be None if parsing fails early.")
-    #check_item_id: int = Field(..., description="Unique identifier for the check.")   
-    is_met: Optional[bool] = Field(None, description="True if the document confirms the check is met, False if it's not met or evidence is missing/unclear.")
-    reliability: float = Field(..., ge=0.0, le=100.0, description="Confidence score (0-100) that the 'is_met' field is correct based *only* on the provided document context. High score requires direct, unambiguous evidence.")
-    sources: List[str] = Field(default_factory=list, description="Specific sentences or passages from the document context that directly support the 'is_met' conclusion and reliability score. Should be exact quotes.")
-    analysis_details: str = Field("", description="Brief LLM reasoning or explanation for the conclusion and reliability score, referencing the context.")
-    needs_human_review: bool = Field(False, description="True if reliability score is below 50%, indicating need for manual verification.")
-    user_input: Optional[str] = Field(None, description="Human input provided during analysis to improve reliability.")
+    """Represents the result of analyzing a check item."""
+    check_item: Annotated[CheckItem, "The check item this result refers to"] = None
+    is_met: Annotated[Optional[bool], "Whether the check is met (true) or not (false)"] = False
+    reliability: Annotated[int, "Reliability score of the result (0-100). 0 is the lowest (not reliable), 100 is the highest (very reliable)."] = 0
+    sources: Annotated[List[str], "Sources of evidence from the document"] = []
+    analysis_details: Annotated[str, "Detailed analysis of the check"] = None
+    needs_human_review: Annotated[bool, "Whether human review is needed (true) or not (false)"] = False
+    user_input: Annotated[Optional[str], "User input provided during review"] = None
 
     @field_validator('reliability')
     def check_reliability_range(cls, v):
@@ -38,6 +37,10 @@ class GraphState(TypedDict):
     checklist_path: Annotated[str, "Path to the Excel checklist file."]
     document_path: Annotated[str, "Path to the Word quotation document."]
     target_phase: Annotated[str, "The specific project phase to analyze checks for."]
+
+    # Workflow context
+    conversation_id: Annotated[Optional[str], "ID of the conversation for websocket communication."] = None
+    callback_manager: Annotated[Optional[Any], "Callback manager for websocket communication."] = None
 
     # Processed data
     checks_for_phase: Annotated[Optional[List[CheckItem]], "List of CheckItem objects relevant to the target_phase."] = None

@@ -24,12 +24,38 @@ async def broadcast_message(message: str, target_connections: Optional[List] = N
     # Always print to console for debugging
     print(f"[BROADCAST] {message}")
     
+    # Import only when needed to avoid circular imports
+    from websocket_server import conversation_callbacks, conversations
+    
+    # Try to send to all active callback managers first
+    message_sent_to_callback = False
+    for conv_id, callback in conversation_callbacks.items():
+        if callback._active and callback.websocket:
+            try:
+                # Use the websocket callback's method to send message
+                await callback._send_message(message, "rag_progress")
+                message_sent_to_callback = True
+            except Exception as e:
+                print(f"Error sending to callback manager for {conv_id}: {e}")
+    
+    # If we already sent via callback managers, we're done
+    if message_sent_to_callback:
+        return
+        
+    # If no callback managers received the message, try direct connections
     connections = target_connections or list(active_connections_var.get())
     if connections:
         try:
+            message_data = {
+                "type": "rag_progress",
+                "content": message,
+                "timestamp": datetime.now().isoformat()
+            }
+            json_message = json.dumps(message_data)
+            
             for connection in connections:
                 try:
-                    await connection.send_text(message)
+                    await connection.send_text(json_message)
                 except Exception as e:
                     print(f"Error sending to connection: {e}")
         except Exception as e:

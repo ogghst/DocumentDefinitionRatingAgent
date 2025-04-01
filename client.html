@@ -7,21 +7,50 @@
     <!-- Add Google Fonts -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
+        /* Light Theme (Default) */
         :root {
-            --primary: #4f46e5;
-            --primary-light: #6366f1;
-            --primary-dark: #4338ca;
-            --secondary: #0ea5e9;
-            --accent: #8b5cf6;
-            --background: #f8fafc;
+            --bg-color: #ffffff;
+            --text-color: #212529;
+            --text-light: #6c757d;
+            --primary-color: #0d6efd;
+            --secondary-color: #6c757d;
+            --accent-color: #6f42c1;
+            --success-color: #198754;
+            --warning-color: #ffc107;
+            --error-color: #dc3545;
+            --border-color: #dee2e6;
             --card-bg: #ffffff;
-            --text: #1e293b;
-            --text-light: #64748b;
-            --border: #e2e8f0;
-            --error: #ef4444;
-            --success: #10b981;
-            --warning: #f59e0b;
-            --token: #15803d;
+            --message-user-bg: var(--primary-color);
+            --message-user-text: #ffffff;
+            --message-ai-bg: #f8f9fa;
+            --message-ai-text: var(--text-color);
+            --reasoning-bg: #e9ecef;
+            --reasoning-text: #495057;
+            --code-bg: #e9ecef;
+            --input-bg: #ffffff;
+        }
+
+        /* Dark Theme */
+        body.dark-mode {
+            --bg-color: #212529;
+            --text-color: #f8f9fa;
+            --text-light: #adb5bd;
+            --primary-color: #4dabf7;
+            --secondary-color: #adb5bd;
+            --accent-color: #da77f2;
+            --success-color: #40c057;
+            --warning-color: #ffc107;
+            --error-color: #ff6b6b;
+            --border-color: #495057;
+            --card-bg: #343a40;
+            --message-user-bg: var(--primary-color);
+            --message-user-text: #212529;
+            --message-ai-bg: #343a40;
+            --message-ai-text: var(--text-color);
+            --reasoning-bg: #495057;
+            --reasoning-text: #ced4da;
+            --code-bg: #495057;
+            --input-bg: #495057;
         }
         
         * {
@@ -34,338 +63,412 @@
             font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
             margin: 0;
             padding: 20px;
-            background-color: var(--background);
-            color: var(--text);
-            line-height: 1.5;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            line-height: 1.6;
+            transition: background-color 0.3s ease, color 0.3s ease;
         }
         
-        h1, h2, h3, h4 {
+        h1 {
             font-weight: 600;
-            color: var(--primary-dark);
-            margin-bottom: 16px;
+            color: var(--primary-color);
+            margin-bottom: 0; /* Removed margin as it's in header */
+            font-size: 1.8em;
         }
         
         .container {
-            max-width: 1000px;
-            margin: 0 auto;
-            padding: 20px;
+            max-width: 800px; /* Narrower for minimalist */
+            width: 100%;
+            margin: 20px auto;
+            padding: 0; /* Remove padding, handled by sections */
+            background-color: transparent; /* Container is transparent */
+            border-radius: 0;
+            box-shadow: none;
         }
         
         .header {
             display: flex;
             align-items: center;
             justify-content: space-between;
-            margin-bottom: 24px;
-            padding-bottom: 16px;
-            border-bottom: 1px solid var(--border);
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid var(--border-color);
+        }
+        
+        .header-controls {
+            display: flex;
+            align-items: center;
+            gap: 12px;
         }
         
         .status-badge {
             display: inline-block;
-            padding: 6px 12px;
-            border-radius: 20px;
-            font-size: 14px;
+            padding: 5px 12px;
+            border-radius: 15px;
+            font-size: 0.85em;
             font-weight: 500;
-            background-color: var(--text-light);
-            color: white;
+            color: var(--text-light);
+            background-color: var(--bg-color);
+            border: 1px solid var(--border-color);
+            transition: all 0.3s ease;
         }
         
         .status-badge.connected {
-            background-color: var(--success);
+            color: var(--success-color);
+            border-color: var(--success-color);
+            background-color: transparent;
         }
         
         #connection-status {
             font-weight: 500;
         }
         
+        /* Minimalist Message Area */
         #messages {
-            border: 1px solid var(--border);
-            padding: 16px;
-            height: 600px;
+            height: 60vh; /* Relative height */
             overflow-y: scroll;
-            margin-bottom: 16px;
-            background-color: var(--card-bg);
-            border-radius: 8px;
-            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+            margin-bottom: 20px;
+            padding: 10px; /* Minimal padding */
+            background-color: transparent; /* Transparent background */
+            border-radius: 0;
+            box-shadow: none;
+            border: none;
         }
         
+        /* Base message styling */
         .message {
-            padding: 10px 16px;
-            margin-bottom: 12px;
-            border-radius: 8px;
+            padding: 10px 15px;
+            margin-bottom: 15px;
             max-width: 85%;
+            border-radius: 8px;
+            line-height: 1.5;
+            transition: background-color 0.3s ease, color 0.3s ease;
+            border: 1px solid var(--border-color);
+            background-color: var(--card-bg);
+            box-shadow: none;
             position: relative;
         }
         
+        /* User Message */
         .message.user {
-            background-color: var(--primary-light);
-            color: white;
+            background: var(--message-user-bg);
+            color: var(--message-user-text);
             margin-left: auto;
             margin-right: 0;
-            border-bottom-right-radius: 0;
+            border-color: transparent; /* No border for user */
+            border-radius: 8px 8px 0 8px;
         }
         
+        /* System Message */
         .message.system {
-            background-color: var(--text-light);
-            color: white;
-            margin-left: auto;
-            margin-right: auto;
-            max-width: 70%;
+            color: var(--text-light);
+            background: transparent;
+            margin: 15px auto;
+            max-width: 80%;
             text-align: center;
-            font-size: 0.9em;
+            font-size: 0.85em;
             font-style: italic;
-            opacity: 0.8;
+            padding: 8px 0;
+            border: none;
+            border-top: 1px dashed var(--border-color);
+            border-bottom: 1px dashed var(--border-color);
+            border-radius: 0;
         }
         
-        .message:not(.user):not(.system) {
-            background-color: var(--background);
-            border: 1px solid var(--border);
+        /* AI/RAG Message */
+        .message:not(.user):not(.system):not(.log-message) {
+            background: var(--message-ai-bg);
+            color: var(--message-ai-text);
             margin-right: auto;
             margin-left: 0;
-            border-bottom-left-radius: 0;
+            border: 1px solid var(--border-color);
+            border-radius: 8px 8px 8px 0;
         }
         
+        /* Log Message */
+         .message.log-message {
+            font-size: 0.8em;
+            color: var(--text-light);
+            background: transparent;
+            border: 1px dashed var(--border-color);
+            opacity: 0.7;
+            margin-top: 5px;
+            margin-bottom: 5px;
+         }
+
+        /* Message Type Label */
         .message-type {
             font-weight: 600;
-            color: var(--primary);
-            display: inline-block;
-            margin-bottom: 4px;
-            font-size: 0.9em;
+            color: var(--secondary-color);
+            display: block;
+            margin-bottom: 5px;
+            font-size: 0.8em;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
         }
         
-        #setup {
-            background-color: var(--card-bg);
-            padding: 24px;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-            margin-bottom: 24px;
-        }
-        
-        #controls {
-            margin-top: 16px;
-            display: flex;
-            gap: 8px;
-        }
-        
+        /* Minimalist Button Style */
         button {
-            padding: 10px 16px;
-            border: none;
-            border-radius: 6px;
+            padding: 8px 15px;
+            border: 1px solid var(--border-color);
+            border-radius: 5px;
             font-family: inherit;
             font-weight: 500;
-            font-size: 14px;
+            font-size: 0.9em;
             cursor: pointer;
-            transition: all 0.2s;
-            background-color: var(--primary);
-            color: white;
+            transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+            background: var(--bg-color);
+            color: var(--text-color);
+            box-shadow: none;
         }
         
         button:hover {
-            background-color: var(--primary-dark);
-            transform: translateY(-1px);
+            border-color: var(--primary-color);
+            color: var(--primary-color);
+            background-color: transparent;
         }
         
         button:active {
-            transform: translateY(0);
+            background-color: var(--border-color);
+            color: var(--text-color);
+            transform: none;
         }
         
-        button#create-btn {
-            background-color: var(--secondary);
-        }
-        
-        button#create-btn:hover {
-            background-color: #0284c7;
-        }
-        
+        /* Specific Button Styles */
         button#start-btn {
-            background-color: var(--success);
+            color: var(--success-color);
+            border-color: var(--success-color);
         }
-        
         button#start-btn:hover {
-            background-color: #059669;
+            background-color: var(--success-color);
+            color: var(--bg-color);
         }
-        
         button#submitResponseBtn {
-            background-color: var(--accent);
+            color: var(--accent-color);
+            border-color: var(--accent-color);
+            float: right; /* Align right */
         }
-        
         button#submitResponseBtn:hover {
-            background-color: #7c3aed;
+             background-color: var(--accent-color);
+            color: var(--bg-color);
         }
-        
+        button#theme-toggle-btn {
+            background: transparent;
+            border: none;
+            font-size: 1.2em;
+            padding: 5px;
+            line-height: 1;
+        }
+        button#theme-toggle-btn:hover {
+             color: var(--primary-color);
+             background-color: transparent;
+        }
+
+        /* Minimalist Input/Textarea Style */
         input, textarea {
-            padding: 10px 14px;
-            border: 1px solid var(--border);
-            border-radius: 6px;
+            padding: 10px 12px;
+            border: 1px solid var(--border-color);
+            border-radius: 5px;
             font-family: inherit;
-            font-size: 14px;
+            font-size: 0.95em;
             width: 100%;
-            background-color: var(--card-bg);
-            color: var(--text);
-            transition: border-color 0.2s;
+            background-color: var(--input-bg);
+            color: var(--text-color);
+            transition: border-color 0.2s ease, background-color 0.3s ease, color 0.3s ease;
+            box-shadow: none;
         }
         
         input:focus, textarea:focus {
             outline: none;
-            border-color: var(--primary);
-            box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.1);
+            border-color: var(--primary-color);
+            box-shadow: none;
         }
         
-        .input-group {
-            display: flex;
-            gap: 8px;
-            flex: 1;
-        }
+        /* Input Group (Removed, no longer needed) */
         
-        .log-message {
-            font-size: 0.85em;
-            color: var(--text-light);
-            padding: 8px;
-            background-color: #f1f5f9;
+        /* Reasoning Block Styling */
+        .reasoning-block {
+            background-color: var(--reasoning-bg);
+            color: var(--reasoning-text);
             border-radius: 4px;
-            margin: 8px 0;
+            padding: 10px 15px;
+            margin: 10px 0;
+            font-style: normal; /* Not italic by default */
+            font-size: 0.9em;
+            border: 1px dashed var(--border-color);
+            position: relative;
+            box-shadow: none;
         }
         
-        .input_request {
-            background-color: #ede9fe;
-            border-left: 4px solid var(--accent);
-            padding: 16px;
-            margin: 16px 0;
-            border-radius: 6px;
+        /* Optional: Add a subtle icon or border */
+        .reasoning-block::before {
+            content: "💡"; /* Simple indicator */
+            position: absolute;
+            left: -20px; /* Position outside */
+            top: 10px;
+            font-size: 0.9em;
+            color: var(--secondary-color);
         }
+        .reasoning-block::after { content: none; } /* Remove previous after style */
         
+        
+        /* Waiting Indicator */
         .rag_waiting {
-            background-color: #fef3c7;
-            color: var(--warning);
-            border: 1px dashed var(--warning);
-            padding: 12px;
+            background: transparent;
+            color: var(--warning-color);
+            border: none;
+            padding: 10px 0;
             text-align: center;
-            margin: 12px auto;
+            margin: 15px auto;
             max-width: 80%;
             font-weight: 500;
-            border-radius: 6px;
-            animation: pulseBorder 2s infinite;
+            border-radius: 0;
+            border-bottom: 1px dashed var(--warning-color);
+            animation: none;
+            box-shadow: none;
         }
         
-        @keyframes pulseBorder {
-            0% { border-color: var(--warning); }
-            50% { border-color: #fdba74; }
-            100% { border-color: var(--warning); }
+        /* Minimalist Token Stream Container */
+        .token-message {
+            background: var(--message-ai-bg);
+            color: var(--message-ai-text);
+            border: 1px solid var(--border-color);
+            border-radius: 8px 8px 8px 0;
         }
+        /* Token Stream Text */
+        .token-stream { display: none; } /* Hide the raw token div */
         
+        /* Minimalist Input Response Form */
         #inputResponseForm {
             display: none;
-            border: 1px solid var(--border);
+            border: none;
             padding: 20px;
+            margin: 20px 0;
+            background: var(--card-bg);
             border-radius: 8px;
-            margin: 16px 0;
-            background-color: var(--card-bg);
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+            border: 1px solid var(--border-color);
+            box-shadow: none;
         }
         
-        /* Markdown rendered content styling */
-        .markdown-content {
+        #inputResponseForm .input-prompt {
+             margin-bottom: 10px;
+             font-weight: 500;
+        }
+        
+        /* Minimalist Markdown Styling */
+        .markdown-content { /* Applied within messages */
             line-height: 1.6;
             word-wrap: break-word;
         }
         
         .markdown-content h1, 
-        .markdown-content h2 {
-            border-bottom: 1px solid var(--border);
-            padding-bottom: 0.3em;
-        }
-        
-        .markdown-content h1, 
-        .markdown-content h2, 
+        .markdown-content h2,
         .markdown-content h3, 
         .markdown-content h4, 
         .markdown-content h5, 
         .markdown-content h6 {
-            margin-top: 24px;
-            margin-bottom: 16px;
+            margin-top: 1em;
+            margin-bottom: 0.5em;
             font-weight: 600;
-            line-height: 1.25;
+            line-height: 1.3;
+            color: var(--primary-color);
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 0.2em;
         }
+        .markdown-content h1 { font-size: 1.3em; }
+        .markdown-content h2 { font-size: 1.2em; }
+        .markdown-content h3 { font-size: 1.1em; }
         
         .markdown-content code {
             padding: 0.2em 0.4em;
-            margin: 0;
+            margin: 0 1px;
             font-size: 85%;
-            background-color: rgba(0, 0, 0, 0.05);
+            background-color: var(--code-bg);
             border-radius: 3px;
             font-family: SFMono-Regular, Consolas, Liberation Mono, Menlo, monospace;
+            color: var(--text-color);
         }
         
         .markdown-content pre {
-            background-color: #f8f9fa;
-            border-radius: 6px;
-            padding: 16px;
+            background-color: var(--code-bg);
+            border-radius: 4px;
+            padding: 12px;
             overflow: auto;
+            margin: 0.8em 0;
+            border: 1px solid var(--border-color);
         }
         
         .markdown-content pre code {
             background-color: transparent;
             padding: 0;
+            margin: 0;
+            border: none;
         }
         
         .markdown-content blockquote {
-            padding: 0 1em;
+            padding: 0.5em 1em;
             color: var(--text-light);
-            border-left: 0.25em solid var(--border);
-            margin: 0 0 16px 0;
+            border-left: 3px solid var(--secondary-color);
+            margin: 0.8em 0;
+            background-color: transparent;
+            border-radius: 0;
         }
         
         .markdown-content table {
             border-collapse: collapse;
-            width: 100%;
-            margin-bottom: 16px;
+            width: auto; /* Don't force full width */
+            margin: 1em 0;
+            border: 1px solid var(--border-color);
+            box-shadow: none;
+            border-radius: 0;
+            overflow: hidden;
         }
         
-        .markdown-content table th, 
-        .markdown-content table td {
-            padding: 6px 13px;
-            border: 1px solid var(--border);
+        .markdown-content th, 
+        .markdown-content td {
+            padding: 6px 10px;
+            border: 1px solid var(--border-color);
+            text-align: left;
         }
         
-        .markdown-content table tr:nth-child(2n) {
-            background-color: #f8f9fa;
+        .markdown-content th {
+            background-color: var(--message-ai-bg);
+            font-weight: 600;
         }
         
-        .token-stream {
-            font-family: 'Consolas', 'Monaco', 'Andale Mono', monospace;
-            white-space: pre-wrap;
-            color: var(--token);
-            border-left: 3px solid var(--token);
-            padding-left: 12px;
-            margin: 10px 0;
-            font-size: 14px;
-            line-height: 1.5;
+        .markdown-content tr:nth-child(even) td {
+            background-color: transparent; /* Simpler table */
         }
         
         .markdown-hints {
-            background-color: rgba(99, 102, 241, 0.05);
-            border-radius: 6px;
-            padding: 8px 12px;
-            font-size: 13px;
+            background-color: transparent;
+            border: 1px dashed var(--border-color);
+            border-radius: 4px;
+            padding: 8px 10px;
+            font-size: 0.85em;
             color: var(--text-light);
-            margin-top: 8px;
+            margin-top: 10px;
+            box-shadow: none;
         }
         
         .markdown-hints code {
-            background-color: rgba(99, 102, 241, 0.1);
-            padding: 2px 5px;
-            border-radius: 4px;
-            font-size: 12px;
+            background-color: var(--code-bg);
+            padding: 2px 4px;
+            border-radius: 3px;
+            font-size: inherit;
+            color: var(--text-color);
+            border: 1px solid var(--border-color);
+            box-shadow: none;
         }
         
-        /* Animation for token streaming */
+        /* Minimalist animation */
         @keyframes fadeIn {
             from { opacity: 0; }
             to { opacity: 1; }
         }
         
-        .token-message {
-            animation: fadeIn 0.3s ease-in-out;
+        .message {
+            animation: fadeIn 0.3s ease-out;
         }
     </style>
 </head>
@@ -373,23 +476,14 @@
     <div class="container">
         <div class="header">
             <h1>Checklist Assistant</h1>
-            <div id="connection-status" class="status-badge">Disconnected</div>
-        </div>
-    
-    <div id="setup">
-        <h3>Connect to Conversation</h3>
-            <div style="display: flex; gap: 8px; margin-top: 16px;">
-                <div class="input-group">
-                    <input type="text" id="conversation-id" placeholder="Enter Conversation ID">
-        <button id="connect-btn">Connect</button>
-                </div>
-                <button id="create-btn">Create New</button>
+            <div class="header-controls">
+                <div id="connection-status" class="status-badge">Disconnected</div>
+                <button id="start-btn">Start Analysis</button>
+                <button id="theme-toggle-btn">🌙</button> 
             </div>
         </div>
     
-    <div id="conversation" style="display:none;">
-        <h3 id="conversation-title">Conversation</h3>
-        
+    <div id="conversation" style="display:block;">
         <div id="messages"></div>
             
             <div id="inputResponseForm">
@@ -409,14 +503,6 @@
                 </div>
             </div>
         
-        <div id="controls">
-            <button id="start-btn">Start RAG Analysis</button>
-                <button id="debug-input-btn" style="background-color: #9333ea; margin-left: 10px;">Debug: Show Input Form</button>
-                <!--<div class="input-group">
-            <input type="text" id="message-input" placeholder="Type a message...">
-            <button id="send-btn">Send</button>
-                </div>-->
-            </div>
     </div>
     </div>
     
@@ -427,13 +513,17 @@
         let currentConversationId = null;
         let isStreamingTokens = false;
         let currentStreamDiv = null;
+        let currentMarkdownDiv = null; // For regular streaming content
+        let currentReasoningDiv = null; // For reasoning block content
+        let isInsideThinkTag = false; // State to track if we are inside <think> tags
         
         const messagesDiv = document.getElementById('messages');
         const statusDiv = document.getElementById('connection-status');
         const conversationDiv = document.getElementById('conversation');
-        const setupDiv = document.getElementById('setup');
         const responseInput = document.getElementById('responseInput');
         const inputResponseForm = document.getElementById('inputResponseForm');
+        const startBtn = document.getElementById('start-btn');
+        const themeToggleBtn = document.getElementById('theme-toggle-btn');
         
         // Initialize markdown-it parser
         const md = window.markdownit({
@@ -461,10 +551,7 @@
                 currentConversationId = id;
                 
                 // Update UI
-                document.getElementById('conversation-title').textContent = 
-                    `${conversation.title}`;
                 conversationDiv.style.display = 'block';
-                setupDiv.style.display = 'none';
                 messagesDiv.innerHTML = '<div class="message system">Connecting...</div>';
                 isStreamingTokens = false;
                 currentStreamDiv = null;
@@ -477,6 +564,8 @@
                     statusDiv.textContent = 'Connected';
                     statusDiv.classList.add('connected');
                     addSystemMessage('WebSocket connected');
+                    // Automatically start RAG after connection
+                    startRagAnalysisInternal(); 
                 };
                 
                 socket.onclose = (event) => {
@@ -524,7 +613,7 @@
                             
                             const errorDiv = document.createElement('div');
                             errorDiv.className = 'message error';
-                            errorDiv.style.color = 'var(--error)';
+                            errorDiv.style.color = 'var(--error-color)';
                             errorDiv.textContent = `Error: ${message.content}`;
                             messagesDiv.appendChild(errorDiv);
                             scrollToBottom();
@@ -563,96 +652,191 @@
         
         // Unified token handler that displays in the messages area
         function handleToken(token) {
-            // For debugging
-            console.log(`Token received: "${token}"`);
-            
-            // If not currently streaming, create a new stream div
-            if (!isStreamingTokens || !currentStreamDiv) {
-                startNewTokenStream();
+            // If not currently streaming, start a new container
+            if (!isStreamingTokens || !currentMarkdownDiv) {
+                startNewTokenStream(); 
             }
+
+            // Buffer incomplete tags across tokens
+            let currentBuffer = (currentMarkdownDiv.dataset.buffer || "") + token;
             
-            // Append the token to the current stream
-            currentStreamDiv.textContent += token;
+            let processedToken = "";
+            let tagFound = false;
             
-            // Use markdown rendering for better readability during streaming
-            try {
-                // Only re-render periodically to improve performance
-                if (token.includes('\n') || token.includes('.') || token.includes('!') || token.includes('?')) {
-                    const parentDiv = currentStreamDiv.parentElement.querySelector('.markdown-content');
-                    if (parentDiv) {
-                        parentDiv.innerHTML = md.render(currentStreamDiv.textContent);
+            // Process buffer for tags
+            while (true) {
+                tagFound = false;
+                let thinkStart = currentBuffer.indexOf("<think>");
+                let thinkEnd = currentBuffer.indexOf("</think>");
+
+                if (isInsideThinkTag) {
+                    // Currently inside a think block, look for end tag
+                    if (thinkEnd !== -1) {
+                        // Append content before the end tag to reasoning block
+                        processedToken = currentBuffer.substring(0, thinkEnd);
+                        if (processedToken) appendToStream(processedToken, true);
+                        
+                        currentBuffer = currentBuffer.substring(thinkEnd + "</think>".length);
+                        isInsideThinkTag = false;
+                        // Do not reset currentReasoningDiv here, it refers to the active stream block
+                        tagFound = true;
+                    } else {
+                        // End tag not found in buffer, append entire buffer to reasoning
+                        appendToStream(currentBuffer, true);
+                        currentBuffer = ""; // Clear buffer
+                        break; // Wait for more tokens
+                    }
+                } else {
+                    // Currently outside a think block, look for start tag
+                    if (thinkStart !== -1) {
+                        // Append content before the start tag to markdown block
+                        processedToken = currentBuffer.substring(0, thinkStart);
+                        if (processedToken) appendToStream(processedToken, false);
+                        
+                        currentBuffer = currentBuffer.substring(thinkStart + "<think>".length);
+                        isInsideThinkTag = true;
+                        // Ensure reasoning div exists and set it as current target
+                         ensureReasoningDivExists(); 
+                        tagFound = true;
+                    } else {
+                        // Start tag not found, append entire buffer to markdown
+                        appendToStream(currentBuffer, false);
+                        currentBuffer = ""; // Clear buffer
+                        break; // Wait for more tokens
                     }
                 }
-            } catch (e) {
-                console.error("Error rendering markdown during streaming:", e);
+                
+                if (!tagFound) break; // No more tags in the current buffer chunk
             }
+            
+            // Store remaining buffer for the next token
+            currentMarkdownDiv.dataset.buffer = currentBuffer;
             
             scrollToBottom();
         }
         
+        // Helper to append token content to the correct div (markdown or reasoning)
+        function appendToStream(content, isReasoning) {
+             if (!content) return;
+
+             let targetDiv = isReasoning ? currentReasoningDiv : currentMarkdownDiv;
+             
+             // If target is reasoning but div doesn't exist yet, create it
+             if (isReasoning && !targetDiv) { 
+                 ensureReasoningDivExists();
+                 targetDiv = currentReasoningDiv; 
+             }
+
+             if (targetDiv) {
+                // Append raw text. Rendering happens in finishTokenStream.
+                targetDiv.textContent += content;
+             } else if (!isReasoning && currentMarkdownDiv) {
+                // Fallback to markdown div if reasoning target somehow failed 
+                currentMarkdownDiv.textContent += content; 
+             } else {
+                 console.error("Target div for streaming not found! Content:", content, "Is Reasoning:", isReasoning);
+             }
+        }
+        
+        // Helper to create the reasoning div if it doesn't exist during streaming
+        function ensureReasoningDivExists() {
+            if (!currentReasoningDiv && currentMarkdownDiv) {
+                 // Check if it already exists from a previous token in the same message
+                 let existingReasoningDiv = currentMarkdownDiv.parentElement.querySelector('.reasoning-block-stream');
+                 if (existingReasoningDiv) {
+                     currentReasoningDiv = existingReasoningDiv;
+                 } else {
+                     // Create it
+                     currentReasoningDiv = document.createElement('div');
+                     currentReasoningDiv.className = 'reasoning-block reasoning-block-stream'; 
+                     currentMarkdownDiv.parentElement.appendChild(currentReasoningDiv);
+                 }
+            }
+        }
+        
         // Start a new token stream in the messages area
         function startNewTokenStream() {
-            // Create a container for the token stream
+            // Create a container for the token stream message
             const streamContainer = document.createElement('div');
-            streamContainer.className = 'message token-message';
+            streamContainer.className = 'message token-message'; // Use a specific class
             
-            // Create a label
+            // Add message type label
             const typeSpan = document.createElement('span');
             typeSpan.className = 'message-type';
-            typeSpan.textContent = 'RAG';
+            typeSpan.textContent = 'RAG'; // Or derive dynamically if needed
             streamContainer.appendChild(typeSpan);
             
-            // Create the token stream content div (hidden, used to store raw text)
-            const tokenDiv = document.createElement('div');
-            tokenDiv.className = 'token-stream';
-            tokenDiv.textContent = '';
-            tokenDiv.style.display = 'none'; // Hide the raw text
-            streamContainer.appendChild(tokenDiv);
-            
-            // Create a div for rendered markdown content
+            // Create div for the main markdown content (target for non-reasoning text)
             const markdownDiv = document.createElement('div');
-            markdownDiv.className = 'markdown-content';
+            markdownDiv.className = 'markdown-content markdown-content-stream'; 
             streamContainer.appendChild(markdownDiv);
             
+            // Reasoning div is created dynamically by appendToStream/ensureReasoningDivExists if needed
+
             // Add to messages
             messagesDiv.appendChild(streamContainer);
             
-            // Set the current stream div and mark as streaming
-            currentStreamDiv = tokenDiv;
+            // Set the current stream references
+            currentMarkdownDiv = markdownDiv; 
+            currentReasoningDiv = null; // Reset reasoning div reference for the new message
             isStreamingTokens = true;
+            isInsideThinkTag = false; // Reset state
+            currentMarkdownDiv.dataset.buffer = ""; // Initialize buffer
             
             scrollToBottom();
         }
         
         // Finish the current token stream
         function finishTokenStream() {
-            if (isStreamingTokens && currentStreamDiv) {
+            if (isStreamingTokens && currentMarkdownDiv) { // Check primary markdown div
                 console.log('Finishing token stream');
-                
-                // Get the final content and render it with markdown
-                const finalContent = currentStreamDiv.textContent;
-                const markdownDiv = currentStreamDiv.parentElement.querySelector('.markdown-content');
-                
-                if (markdownDiv) {
+                isStreamingTokens = false; 
+                isInsideThinkTag = false;
+
+                // Process any remaining buffer
+                let remainingBuffer = currentMarkdownDiv.dataset.buffer || "";
+                if (remainingBuffer) {
+                    appendToStream(remainingBuffer, isInsideThinkTag); // Append to correct div
+                    currentMarkdownDiv.dataset.buffer = "";
+                }
+
+                // Final rendering of markdown content
+                if (currentMarkdownDiv.textContent) {
                     try {
-                        markdownDiv.innerHTML = md.render(finalContent);
+                         currentMarkdownDiv.innerHTML = md.render(currentMarkdownDiv.textContent.trim());
+                         currentMarkdownDiv.classList.remove('markdown-content-stream'); // Remove stream class
                     } catch (e) {
-                        console.error("Error rendering markdown in token stream:", e);
-                        markdownDiv.textContent = finalContent; // Fallback to plain text
+                        console.error("Error rendering final markdown stream:", e);
                     }
                 }
                 
-                // Reset the state
-                isStreamingTokens = false;
-                currentStreamDiv = null;
+                // Final rendering of reasoning content
+                const reasoningDiv = currentMarkdownDiv.parentElement.querySelector('.reasoning-block-stream');
+                if (reasoningDiv && reasoningDiv.textContent) {
+                     try {
+                         // Render markdown inside the reasoning block as well
+                         reasoningDiv.innerHTML = md.render(reasoningDiv.textContent.trim());
+                         reasoningDiv.classList.remove('reasoning-block-stream'); // Remove stream class
+                    } catch (e) {
+                        console.error("Error rendering final reasoning stream:", e);
+                    }
+                }
                 
-                // Scroll to ensure visibility
+                // Clear references 
+                currentMarkdownDiv = null;
+                currentReasoningDiv = null;
+                
                 scrollToBottom();
             }
+            // Ensure state is reset even if stream ended unexpectedly
+            isStreamingTokens = false; 
+            isInsideThinkTag = false;
+            currentMarkdownDiv = null;
+            currentReasoningDiv = null;
         }
         
         // Create a new conversation
-        async function createConversation() {
+        async function createConversationInternal() {
             try {
                 const response = await fetch(`${API_URL}/conversations`, {
                     method: 'POST',
@@ -666,24 +850,25 @@
                 });
                 
                 const data = await response.json();
-                document.getElementById('conversation-id').value = data.id;
-                
-                // Auto-connect to the new conversation
-                connectToConversation(data.id);
+                return data.id; // Return the new ID
             } catch (error) {
                 alert('Error creating conversation: ' + error.message);
+                return null; // Indicate failure
             }
         }
         
         // Start RAG analysis
-        async function startRagAnalysis() {
-            if (!currentConversationId) return;
+        async function startRagAnalysisInternal() {
+            if (!currentConversationId || !socket || socket.readyState !== WebSocket.OPEN) {
+                console.error("Cannot start RAG: Not connected or missing ID.");
+                addSystemMessage("Error: Could not start analysis. Connection failed.");
+                startBtn.disabled = false;
+                startBtn.textContent = 'Start Analysis';
+                return;
+            }
             
             try {
-                document.getElementById('start-btn').disabled = true;
-                document.getElementById('start-btn').textContent = 'Starting...';
-                
-                // Add a system message
+                // UI update is already done by the initial start function
                 addSystemMessage('Starting RAG analysis...');
                 
                 await fetch(`${API_URL}/conversations/${currentConversationId}/start`, {
@@ -691,11 +876,36 @@
                 });
                 
                 addSystemMessage('RAG analysis requested');
+                // No need to re-enable button here, it stays disabled during analysis
             } catch (error) {
                 alert('Error starting RAG analysis: ' + error.message);
-                document.getElementById('start-btn').disabled = false;
-                document.getElementById('start-btn').textContent = 'Start RAG Analysis';
+                addSystemMessage('Error starting analysis: ' + error.message);
+                // Re-enable button on error
+                startBtn.disabled = false;
+                startBtn.textContent = 'Start Analysis';
             }
+        }
+        
+        // Initial function called by the Start button
+        async function startProcess() {
+             if (startBtn.disabled) return; // Prevent double clicks
+
+             startBtn.disabled = true;
+             startBtn.textContent = 'Starting...';
+             messagesDiv.innerHTML = ''; // Clear previous messages
+             addSystemMessage("Creating new conversation...");
+
+             const newConversationId = await createConversationInternal();
+
+             if (newConversationId) {
+                 addSystemMessage(`Conversation ${newConversationId} created. Connecting...`);
+                 // connectToConversation will call startRagAnalysisInternal on successful connection
+                 connectToConversation(newConversationId); 
+             } else {
+                 addSystemMessage("Failed to create conversation.");
+                 startBtn.disabled = false;
+                 startBtn.textContent = 'Start Analysis';
+             }
         }
         
         // Send a message
@@ -739,26 +949,32 @@
                 typeSpan.textContent = message.type || 'unknown';
             
             // Create content container
-            const contentDiv = document.createElement('div');
+            const contentContainer = document.createElement('div');
             
             // Handle different content types
-            if (typeof message.content === 'string') {
-                    // Determine if we should render markdown based on message type
-                    if (message.type === 'input_request') {
-                        // For input requests, render as markdown
-                        contentDiv.className = 'markdown-content';
-                        contentDiv.innerHTML = md.render(message.content);
-                    } else {
-                        // For other types like system messages, use plain text
-                contentDiv.textContent = message.content;
-                    }
-            } else {
-                contentDiv.innerHTML = '<pre>' + JSON.stringify(message, null, 2) + '</pre>';
-                }
+            if (message.type === 'RAG_RESULT') {
+                 // Try to parse and pretty-print JSON for RAG_RESULT
+                 try {
+                     const parsedJson = JSON.parse(message.content);
+                     const pre = document.createElement('pre');
+                     const code = document.createElement('code');
+                     code.textContent = JSON.stringify(parsedJson, null, 2); // Indent with 2 spaces
+                     pre.appendChild(code);
+                     contentContainer.appendChild(pre);
+                 } catch (e) {
+                     // If parsing fails, display as markdown (which might contain think tags)
+                     console.warn("RAG_RESULT content was not valid JSON, rendering as markdown:", message.content);
+                     renderMarkdownWithReasoning(message.content, contentContainer); 
+                 }
+            } else if (typeof message.content === 'string') {
+                 // Process other string content for <think> tags (non-streaming)
+                 renderMarkdownWithReasoning(message.content, contentContainer); 
+            } else { // If content is not a string (e.g., object for errors sometimes)
+                contentContainer.innerHTML = '<pre>' + JSON.stringify(message.content, null, 2) + '</pre>';
+            }
                 
                 div.appendChild(typeSpan);
-                div.appendChild(document.createTextNode(' '));
-                div.appendChild(contentDiv);
+                div.appendChild(contentContainer); 
             }
             
             // Add timestamp if available
@@ -769,6 +985,48 @@
             
             messagesDiv.appendChild(div);
             scrollToBottom();
+        }
+        
+        // Helper function to render markdown string containing potential <think> tags (for non-streaming messages)
+        function renderMarkdownWithReasoning(content, targetElement) {
+            targetElement.innerHTML = ''; // Clear existing content
+            const reasoningRegex = /<think>([\s\S]*?)<\/think>/g; // Corrected Regex
+            let lastIndex = 0;
+            let match;
+
+            while ((match = reasoningRegex.exec(content)) !== null) {
+                // Add content before the tag as markdown
+                if (match.index > lastIndex) {
+                    const markdownPart = content.substring(lastIndex, match.index);
+                    const markdownDiv = document.createElement('div');
+                    markdownDiv.className = 'markdown-content';
+                    markdownDiv.innerHTML = md.render(markdownPart.trim());
+                    targetElement.appendChild(markdownDiv);
+                }
+                
+                // Add the reasoning block as markdown
+                const reasoningContent = match[1];
+                const reasoningDiv = document.createElement('div');
+                reasoningDiv.className = 'reasoning-block';
+                reasoningDiv.innerHTML = md.render(reasoningContent.trim()); // Render markdown inside
+                targetElement.appendChild(reasoningDiv);
+                
+                lastIndex = reasoningRegex.lastIndex;
+            }
+            
+            // Add any remaining content after the last tag as markdown
+            if (lastIndex < content.length) {
+                const markdownPart = content.substring(lastIndex);
+                const markdownDiv = document.createElement('div');
+                markdownDiv.className = 'markdown-content';
+                markdownDiv.innerHTML = md.render(markdownPart.trim());
+                targetElement.appendChild(markdownDiv);
+            }
+            
+             // Handle cases where the entire content might be empty or just tags
+             if (targetElement.innerHTML.trim() === '') {
+                 targetElement.innerHTML = '<em>(Empty message)</em>';
+             }
         }
         
         // Display a log message with better formatting
@@ -806,7 +1064,7 @@
             const promptElement = document.createElement('div');
             promptElement.className = 'markdown-content';
             
-            // Render the prompt message as markdown
+            // Render the prompt message as markdown (no <think> tags expected here)
             promptElement.innerHTML = md.render(message) + 
                 '<p><em>You can use Markdown formatting in your response</em></p>';
             
@@ -831,10 +1089,6 @@
             waitingIndicator.textContent = 'RAG Analysis Paused: Waiting for your input...';
             messagesDiv.appendChild(waitingIndicator);
             scrollToBottom();
-            
-            // Debug info
-            console.log("Input request form displayed");
-            console.log("Submit button:", document.getElementById('submitResponseBtn'));
         }
         
         // Submit response for the input request
@@ -875,7 +1129,7 @@
                 const responseContent = document.createElement('div');
                 responseContent.className = 'markdown-content';
                 
-                // Add markdown-rendered content
+                // Add markdown-rendered content (no <think> tags expected in user input)
                 responseContent.innerHTML = content ? md.render(content) : '<em>(skipped)</em>';
                 
                 responseDiv.appendChild(responseContent);
@@ -900,13 +1154,7 @@
         }
         
         // Event listeners
-        document.getElementById('connect-btn').addEventListener('click', () => {
-            const id = document.getElementById('conversation-id').value.trim();
-            if (id) connectToConversation(id);
-        });
-        
-        document.getElementById('create-btn').addEventListener('click', createConversation);
-        document.getElementById('start-btn').addEventListener('click', startRagAnalysis);
+        startBtn.addEventListener('click', startProcess);
         
         // Make sure the submitResponseBtn listener is properly set up
         const submitResponseBtn = document.getElementById('submitResponseBtn');
@@ -917,44 +1165,28 @@
             console.error("Submit response button not found in the DOM");
         }
         
-        // Add event listeners when the DOM is fully loaded
-        document.addEventListener('DOMContentLoaded', () => {
-            const submitBtn = document.getElementById('submitResponseBtn');
-            if (submitBtn) {
-                submitBtn.addEventListener('click', submitResponse);
-                console.log("Submit button listener attached on DOMContentLoaded");
-            }
-            
-            // Add debug button for manual testing
-            const debugInputBtn = document.getElementById('debug-input-btn');
-            if (debugInputBtn) {
-                debugInputBtn.addEventListener('click', () => {
-                    console.log("Debug button clicked - showing input form");
-                    showInputRequestForm("This is a test prompt. *Please* respond with any text to test the form.");
-                });
-            }
-            
-            // Also set up the message input event listener
-            const messageInput = document.getElementById('message-input');
-            if (messageInput) {
-                messageInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                sendMessage();
-                    }
-                });
-            }
-            
-            // Set up the response input event listener for Ctrl+Enter
-            const responseInputElem = document.getElementById('responseInput');
-            if (responseInputElem) {
-                responseInputElem.addEventListener('keypress', (e) => {
-                    if (e.key === 'Enter' && e.ctrlKey) {
-                        submitResponse();
-                        e.preventDefault();
-                    }
-                });
+        // Dark Mode Toggle Logic
+        themeToggleBtn.addEventListener('click', () => {
+            document.body.classList.toggle('dark-mode');
+            // Update button icon based on theme
+            if (document.body.classList.contains('dark-mode')) {
+                themeToggleBtn.textContent = '☀️'; // Sun icon for dark mode
+                localStorage.setItem('theme', 'dark'); // Save preference
+            } else {
+                themeToggleBtn.textContent = '🌙'; // Moon icon for light mode
+                localStorage.setItem('theme', 'light'); // Save preference
             }
         });
+        
+        // Apply saved theme on load
+        const savedTheme = localStorage.getItem('theme');
+        if (savedTheme === 'dark') {
+            document.body.classList.add('dark-mode');
+            themeToggleBtn.textContent = '☀️';
+        } else {
+             document.body.classList.remove('dark-mode'); // Ensure light mode if not dark
+             themeToggleBtn.textContent = '🌙';
+        }
         
         // Helper function to scroll messages to bottom
         function scrollToBottom() {

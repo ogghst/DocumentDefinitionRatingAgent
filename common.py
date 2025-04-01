@@ -19,49 +19,50 @@ conversation_callbacks = {}
 connection_queues = weakref.WeakKeyDictionary()
 
 # Shared functions for broadcasting and user input
-async def broadcast_message(message: str, target_connections: Optional[List] = None):
-    """Send a message to specified connections or all active ones."""
-    # Always print to console for debugging
-    print(f"[BROADCAST] {message}")
-    
-    # Import only when needed to avoid circular imports
+async def send_message(conversation_id: str, message: str):
+    """Send a message to the specific connection associated with the conversation_id."""
+    # Always print to console for debugging/logging
+    print(f"[SEND][{conversation_id}] {message}")
+
+    # Import only when needed to avoid circular imports - Moved imports to top
     from websocket_server import conversation_callbacks, conversations
-    
-    # Try to send to all active callback managers first
-    message_sent_to_callback = False
-    for conv_id, callback in conversation_callbacks.items():
-        if callback._active and callback.websocket:
-            try:
-                # Use the websocket callback's method to send message
-                await callback._send_message(message, "rag_progress")
-                message_sent_to_callback = True
-            except Exception as e:
-                print(f"Error sending to callback manager for {conv_id}: {e}")
-    
-    # If we already sent via callback managers, we're done
-    if message_sent_to_callback:
-        return
-        
-    # If no callback managers received the message, try direct connections
-    connections = target_connections or list(active_connections_var.get())
-    if connections:
+
+    # Look up the specific callback manager
+    callback = conversation_callbacks.get(conversation_id)
+
+    if callback and callback._active and callback.websocket:
         try:
-            message_data = {
-                "type": "rag_progress",
-                "content": message,
-                "timestamp": datetime.now().isoformat()
-            }
-            json_message = json.dumps(message_data)
-            
-            for connection in connections:
-                try:
-                    await connection.send_text(json_message)
-                except Exception as e:
-                    print(f"Error sending to connection: {e}")
+            # Use the websocket callback's method to send message
+            # Assuming message type is consistently 'rag_progress' for now,
+            # but could be parameterized if needed later.
+            await callback._send_message(message, "rag_progress")
         except Exception as e:
-            print(f"Error during broadcast: {e}")
+            print(f"Error sending message via callback manager for {conversation_id}: {e}")
     else:
-        print("[BROADCAST] No active connections, message only logged to console")
+        # Log if the target conversation/callback is not found or inactive
+        status = "not found" if not callback else "inactive" if not callback._active else "no websocket"
+        print(f"[SEND][{conversation_id}] Could not send message: Callback manager {status}.")
+
+    # Remove the old logic for broadcasting to all active_connections
+    # connections = target_connections or list(active_connections_var.get())
+    # if connections:
+    #     try:
+    #         message_data = {
+    #             "type": "rag_progress",
+    #             "content": message,
+    #             "timestamp": datetime.now().isoformat()
+    #         }
+    #         json_message = json.dumps(message_data)
+            
+    #         for connection in connections:
+    #             try:
+    #                 await connection.send_text(json_message)
+    #             except Exception as e:
+    #                 print(f"Error sending to connection: {e}")
+    #     except Exception as e:
+    #         print(f"Error during broadcast: {e}")
+    # else:
+    #     print("[BROADCAST] No active connections, message only logged to console")
 
 # Function to queue a message for processing by waiting coroutines
 def queue_message(connection, message: str):

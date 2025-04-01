@@ -14,7 +14,7 @@ from typing_extensions import Annotated, TypedDict
 from models import CheckItem, CheckResult
 from document_processor import load_document, create_retriever
 from rag_engine import create_hybrid_rag_chain, generate_questions, create_streaming_chain
-from common import broadcast_message, get_user_input
+from common import send_message, get_user_input
 from models import GraphState
 from report_generator import generate_pdf_report
 
@@ -29,18 +29,19 @@ except ImportError:
 # Node Functions
 async def load_and_filter_checklist(state: GraphState) -> GraphState:
     """Loads checklist from Excel and filters checks for the target phase."""
-    await broadcast_message(f"\n--- Node: load_and_filter_checklist ---")
+    conversation_id = state.get("conversation_id")
+    await send_message(conversation_id, f"\n--- Node: load_and_filter_checklist ---")
     checklist_path = state['checklist_path']
     target_phase = state['target_phase']
-    await broadcast_message(f"Loading Checklist: '{checklist_path}' for Phase: '{target_phase}'")
+    await send_message(conversation_id, f"Loading Checklist: '{checklist_path}' for Phase: '{target_phase}'")
     
     # Ensure the directory exists
     os.makedirs(os.path.dirname(checklist_path), exist_ok=True)
     
     try:
         if not os.path.exists(checklist_path):
-            await broadcast_message(f"WARNING: Checklist file not found at: {checklist_path}")
-            await broadcast_message("Creating a demo checklist file.")
+            await send_message(conversation_id, f"WARNING: Checklist file not found at: {checklist_path}")
+            await send_message(conversation_id, "Creating a demo checklist file.")
             
             # Create a demo checklist
             dummy_data = {
@@ -62,7 +63,7 @@ async def load_and_filter_checklist(state: GraphState) -> GraphState:
                 'Phase': ['Apertura Commessa', 'Lancio', 'Apertura Commessa', 'Lancio', 'Apertura Commessa', 'Rilascio Tecnico', 'Apertura Commessa', 'Apertura Commessa']
             }
             pd.DataFrame(dummy_data).to_excel(checklist_path, index=False)
-            await broadcast_message("Demo checklist created.")
+            await send_message(conversation_id, "Demo checklist created.")
 
         # Continue with loading the file
         df = pd.read_excel(checklist_path)
@@ -79,7 +80,7 @@ async def load_and_filter_checklist(state: GraphState) -> GraphState:
         target_phase_lower = target_phase.strip().lower()
         filtered_df = df[df['phase'].astype(str).str.strip().str.lower() == target_phase_lower]
 
-        await broadcast_message(f"Found {len(filtered_df)} rows for phase '{target_phase}'.")
+        await send_message(conversation_id, f"Found {len(filtered_df)} rows for phase '{target_phase}'.")
         
         checks = []
         for _, row in filtered_df.iterrows():
@@ -94,47 +95,48 @@ async def load_and_filter_checklist(state: GraphState) -> GraphState:
                      phase=str(row['phase'])
                  ))
              except (ValueError, TypeError) as ve:
-                 await broadcast_message(f"Warning: Skipping row due to type conversion error: {ve} - Row data: {row.to_dict()}")
+                 await send_message(conversation_id, f"Warning: Skipping row due to type conversion error: {ve} - Row data: {row.to_dict()}")
                  continue
 
-        await broadcast_message(f"Created {len(checks)} CheckItem objects for phase '{target_phase}'.")
+        await send_message(conversation_id, f"Created {len(checks)} CheckItem objects for phase '{target_phase}'.")
         state["checks_for_phase"] = checks
         state["error_message"] = None
     except Exception as e:
-        await broadcast_message(f"ERROR loading checklist: {e}")
-        await broadcast_message(f"Traceback: {traceback.format_exc()}")
+        await send_message(conversation_id, f"ERROR loading checklist: {e}")
+        await send_message(conversation_id, f"Traceback: {traceback.format_exc()}")
         state["error_message"] = f"Failed to load/filter checklist: {e}"
         state["checks_for_phase"] = []
     
     # Explicitly log the result
     if state["checks_for_phase"]:
-        await broadcast_message(f"Successfully loaded {len(state['checks_for_phase'])} checks.")
+        await send_message(conversation_id, f"Successfully loaded {len(state['checks_for_phase'])} checks.")
     else:
-        await broadcast_message("No checks were loaded for the specified phase.")
+        await send_message(conversation_id, "No checks were loaded for the specified phase.")
         
     return state
 
 async def load_index_document(state: GraphState) -> GraphState:
     """Loads the Word document, chunks it, creates embeddings, and sets up the retriever."""
-    await broadcast_message(f"\n--- Node: load_index_document ---")
+    conversation_id = state.get("conversation_id")
+    await send_message(conversation_id, f"\n--- Node: load_index_document ---")
     if state.get("error_message"):
-        await broadcast_message("Skipping due to previous error.")
+        await send_message(conversation_id, "Skipping due to previous error.")
         return state
 
     document_path = state['document_path']
-    await broadcast_message(f"Loading & Indexing Document: '{document_path}'")
+    await send_message(conversation_id, f"Loading & Indexing Document: '{document_path}'")
     try:
         # Load and chunk the document
         documents = load_document(document_path)
-        await broadcast_message(f"Split document into {len(documents)} chunks.")
+        await send_message(conversation_id, f"Split document into {len(documents)} chunks.")
         
         # Create retriever
-        await broadcast_message("Creating vector store with embeddings...")
+        await send_message(conversation_id, "Creating vector store with embeddings...")
         state["retriever"] = create_retriever(documents)
-        await broadcast_message("Document indexed successfully. Retriever is ready.")
+        await send_message(conversation_id, "Document indexed successfully. Retriever is ready.")
         state["error_message"] = None
     except Exception as e:
-        await broadcast_message(f"ERROR loading/indexing document: {e}")
+        await send_message(conversation_id, f"ERROR loading/indexing document: {e}")
         traceback.print_exc()
         state["error_message"] = f"Failed to load or index document: {e}"
         state["retriever"] = None
@@ -164,10 +166,10 @@ async def analyze_check_rag(check_item: CheckItem, config: RunnableConfig) -> Ch
         retriever = config["configurable"].get("retriever")
     
     if not retriever:
-        await broadcast_message(f"ERROR: No retriever found in config for check ID {check_item.id}")
+        await send_message(conversation_id, f"ERROR: No retriever found in config for check ID {check_item.id}")
         return CheckResult(
             check_item=check_item, is_met=None, reliability=0.0, sources=[],
-            analysis_details="Analysis failed: No document retriever available",
+            analysis_details="Failed: Retriever not available in the workflow configuration.",
             needs_human_review=True
         )
     
@@ -202,7 +204,7 @@ async def analyze_check_rag(check_item: CheckItem, config: RunnableConfig) -> Ch
                     # Use directly as a callback handler
                     chain_config["callbacks"] = [callback_manager]
                 except Exception as e:
-                    await broadcast_message(f"Warning: Failed to set up callback manager: {e}")
+                    await send_message(conversation_id, f"Warning: Failed to set up callback manager: {e}")
                     
             # Pass any metadata needed
             chain_config["metadata"] = {"conversation_id": conversation_id}
@@ -216,7 +218,7 @@ async def analyze_check_rag(check_item: CheckItem, config: RunnableConfig) -> Ch
                 check_result.check_item = check_item  # Add back the check item
             elif "parsing_error" in result:
                 # Handle parsing errors
-                await broadcast_message(f"Error parsing LLM output: {result['parsing_error']}")
+                await send_message(conversation_id, f"Error parsing LLM output: {result['parsing_error']}")
                 check_result = CheckResult(
                     check_item=check_item,
                     is_met=False,
@@ -247,7 +249,7 @@ async def analyze_check_rag(check_item: CheckItem, config: RunnableConfig) -> Ch
                 # Mark as needing human review in the final results if reliability < 50
                 if check_result.reliability < 50:
                     check_result.needs_human_review = True
-                    await broadcast_message(f"Low reliability for check ID {check_item.id}: {check_result.reliability}%. Accepting result without further user input.")
+                    await send_message(conversation_id, f"Low reliability for check ID {check_item.id}: {check_result.reliability}%. Accepting result without further user input.")
                     
                     # Ensure user_input field is set to indicate no input was requested
                     if check_result.user_input is None:
@@ -259,7 +261,7 @@ async def analyze_check_rag(check_item: CheckItem, config: RunnableConfig) -> Ch
             
             # We need human review
             check_result.needs_human_review = True
-            await broadcast_message(f"Low reliability ({check_result.reliability}%) for check ID {check_item.id}: Requesting human input")
+            await send_message(conversation_id, f"Low reliability ({check_result.reliability}%) for check ID {check_item.id}: Requesting human input")
             
             # Ask if the user wants to continue or provide more info
             questions = generate_questions(check_item, check_result, callback_manager)
@@ -293,7 +295,7 @@ Enter "1" to accept and continue, or type your answer to the question(s) above:
                 try:
                     user_response = await callback_manager.get_user_input(user_prompt)
                 except Exception as e:
-                    await broadcast_message(f"Error getting user input via callback manager: {e}")
+                    await send_message(conversation_id, f"Error getting user input via callback manager: {e}")
                     user_response = "timeout"
                     check_result.user_input = f"Input request failed: {str(e)}"
             else:
@@ -301,7 +303,7 @@ Enter "1" to accept and continue, or type your answer to the question(s) above:
                 try:
                     user_response = await get_user_input(user_prompt, conversation_id)
                 except Exception as e:
-                    await broadcast_message(f"Error getting user input: {e}")
+                    await send_message(conversation_id, f"Error getting user input: {e}")
                     user_response = "timeout"
                     check_result.user_input = f"Input request failed: {str(e)}"
             
@@ -309,13 +311,13 @@ Enter "1" to accept and continue, or type your answer to the question(s) above:
             user_provided_input = True
             
             if user_response in ["1", "skip", "continue", "accept"]:
-                await broadcast_message(f"User chose to accept the current result for check ID {check_item.id}")
+                await send_message(conversation_id, f"User chose to accept the current result for check ID {check_item.id}")
                 # Record the exact user response
                 check_result.user_input = user_response
                 saved_user_input = user_response
                 break
             elif user_response in ["2", "improve"]:
-                await broadcast_message(f"User chose to provide more information...")
+                await send_message(conversation_id, f"User chose to provide more information...")
                 
                 # Get the specific information
                 info_prompt = "Please provide additional information about this check item:"
@@ -329,7 +331,7 @@ Enter "1" to accept and continue, or type your answer to the question(s) above:
                 saved_user_input = additional_info  # Save it for subsequent attempts
                 
                 # Add to the context for the next attempt
-                await broadcast_message(f"Retrying analysis with additional information...")
+                await send_message(conversation_id, f"Retrying analysis with additional information...")
                 attempt += 1
                 continue
             else:
@@ -337,7 +339,7 @@ Enter "1" to accept and continue, or type your answer to the question(s) above:
                 additional_info = user_response
                 check_result.user_input = user_response
                 saved_user_input = user_response  # Save it for subsequent attempts
-                await broadcast_message(f"Retrying analysis with user information...")
+                await send_message(conversation_id, f"Retrying analysis with user information...")
                 attempt += 1
                 continue
         
@@ -352,14 +354,14 @@ Enter "1" to accept and continue, or type your answer to the question(s) above:
             check_result.user_input = "No input requested - automated assessment accepted"
             
         # Add debugging information
-        await broadcast_message(f"Final result for check ID {check_item.id} - user_input: '{check_result.user_input}'")
+        await send_message(conversation_id, f"Final result for check ID {check_item.id} - user_input: '{check_result.user_input}'")
             
         return check_result
     except Exception as e:
-        await broadcast_message(f"ERROR during RAG analysis for check ID {check_item.id}: {e}")
-        await broadcast_message(f"RAG Chain Error: {str(e)}")
-        await broadcast_message(f"Input used: {chain_input}")
-        await broadcast_message(f"CheckItem data: {check_item.model_dump()}")
+        await send_message(conversation_id, f"ERROR during RAG analysis for check ID {check_item.id}: {e}")
+        await send_message(conversation_id, f"RAG Chain Error: {str(e)}")
+        await send_message(conversation_id, f"Input used: {chain_input}")
+        await send_message(conversation_id, f"CheckItem data: {check_item.model_dump()}")
         traceback.print_exc()
         return CheckResult(
             check_item=check_item, is_met=None, reliability=0.0, sources=[],
@@ -369,6 +371,10 @@ Enter "1" to accept and continue, or type your answer to the question(s) above:
 
 async def format_final_output(state: GraphState) -> GraphState:
     """Format the final output and save results to JSON file."""
+    # Assign conversation_id at the beginning of the function scope
+    conversation_id = state.get("conversation_id") 
+    log_prefix = f"[Node][format_final_output][{conversation_id or 'UNKNOWN_CONV_ID'}]"
+    
     try:
         if not state.get("analysis_results"):
             state["error_message"] = "No analysis results to format"
@@ -386,7 +392,7 @@ async def format_final_output(state: GraphState) -> GraphState:
             # IMPORTANT: Only set the generic message if no user input was recorded
             # Never overwrite actual user input with generic messages
             if result_dict.get("user_input") is None and result_dict.get("needs_human_review"):
-                result_dict["user_input"] = "No input requested - automated assessment accepted"
+                result_dict["user_input"] = "No input requested - automated assessment accepted" # Needs review but no input given
                 
             results.append(result_dict)
             
@@ -399,38 +405,54 @@ async def format_final_output(state: GraphState) -> GraphState:
         with open(json_path, "w", encoding="utf-8") as f:
             json.dump(results, f, indent=2, ensure_ascii=False)
             
-        await broadcast_message(f"Results saved to JSON file: {json_path}")
+        print(f"{log_prefix} Results saved to JSON file: {json_path}")
+        if conversation_id: # Check if ID exists before sending message
+            await send_message(conversation_id, f"Results saved to JSON file: {json_path}")
         
         # Generate PDF report
         pdf_path = output_dir / f"analysis_results_{timestamp}_report.pdf"
         try:
             await generate_pdf_report(results, str(pdf_path))
-            await broadcast_message(f"PDF report generated: {pdf_path}")
+            print(f"{log_prefix} PDF report generated: {pdf_path}")
+            if conversation_id: # Check if ID exists before sending message
+                await send_message(conversation_id, f"PDF report generated: {pdf_path}")
         except Exception as e:
-            await broadcast_message(f"Warning: Failed to generate PDF report: {e}")
+            print(f"{log_prefix} Warning: Failed to generate PDF report: {e}")
+            if conversation_id: # Check if ID exists before sending message
+                await send_message(conversation_id, f"Warning: Failed to generate PDF report: {e}")
             # Continue even if PDF generation fails
         
         state["final_results"] = results
         return state
         
     except Exception as e:
+        print(f"{log_prefix} Error during final output formatting: {e}")
+        traceback.print_exc() # Print traceback for the formatting error
         state["error_message"] = f"Error formatting final output: {str(e)}"
+        # Send error message back if possible
+        if conversation_id: # Check if ID exists before sending message
+             try:
+                 await send_message(conversation_id, state["error_message"])
+             except Exception as send_e:
+                 print(f"{log_prefix} Failed to send formatting error message: {send_e}")
         return state
 
 async def analyze_checks_map_function(state: GraphState) -> GraphState:
     """Takes all checks and maps the analyze function over them with proper state config."""
-    await broadcast_message(f"\n--- Node: analyze_checks_map function ---")
+    # Assign conversation_id at the beginning of the function scope
+    conversation_id = state.get("conversation_id") 
+    await send_message(conversation_id, f"\n--- Node: analyze_checks_map function ---")
     checks = state.get("checks_for_phase", [])
-    await broadcast_message(f"Processing {len(checks)} checks in map function...")
+    await send_message(conversation_id, f"Processing {len(checks)} checks in map function...")
     
     if not checks:
-        await broadcast_message("No checks to process. Setting empty results list.")
+        await send_message(conversation_id, "No checks to process. Setting empty results list.")
         state["analysis_results"] = []
         return state
     
     # Extract the callback manager and conversation ID if they exist in the state
     callback_manager = state.get("callback_manager")
-    conversation_id = state.get("conversation_id")
+    # conversation_id is already assigned above
     
     # Create a base config without callbacks to avoid AsyncCallbackManager conversion errors
     config = {
@@ -449,9 +471,9 @@ async def analyze_checks_map_function(state: GraphState) -> GraphState:
             analyze_check_node = RunnableLambda(analyze_check_rag, name="AnalyzeSingleCheck")
             result = await analyze_check_node.ainvoke(check, config=config)
             results.append(result)
-            await broadcast_message(f"Successfully analyzed check ID {check.id}")
+            await send_message(conversation_id, f"Successfully analyzed check ID {check.id}")
         except Exception as e:
-            await broadcast_message(f"Error analyzing check ID {check.id}: {e}")
+            await send_message(conversation_id, f"Error analyzing check ID {check.id}: {e}")
             traceback.print_exc()  # Print full traceback for debugging
             # Create a placeholder result for failed checks
             results.append(CheckResult(
@@ -461,23 +483,40 @@ async def analyze_checks_map_function(state: GraphState) -> GraphState:
             ))
     
     # Update the state with results
-    await broadcast_message(f"Completed analysis of {len(results)} checks.")
+    await send_message(conversation_id, f"Completed analysis of {len(results)} checks.")
     state["analysis_results"] = results
     return state
 
 async def decide_after_indexing(state: GraphState) -> str:
     """Determines the next step after document indexing."""
-    await broadcast_message(f"\n--- Edge: decide_after_indexing ---")
+    # Attempt to get conversation_id and send message, but don't crash if missing
+    conversation_id = state.get("conversation_id") 
+    log_prefix = f"[Edge][decide_after_indexing][{conversation_id or 'UNKNOWN_CONV_ID'}]"
+    
+    if conversation_id:
+        await send_message(conversation_id, f"--- Edge: decide_after_indexing ---")
+    else:
+        print(f"{log_prefix} Warning: conversation_id not found in state.")
+        
     if state.get("error_message"):
-        await broadcast_message("Decision: Error detected, routing to format_output.")
+        print(f"{log_prefix} Decision: Error detected, routing to format_output.")
+        # Send message only if ID exists
+        if conversation_id:
+            await send_message(conversation_id, "Decision: Error detected, routing to format_output.")
         return "format_output"
 
     checks = state.get("checks_for_phase")
     if not checks:
-        await broadcast_message("Decision: No checks found for the phase. Routing to format_output.")
+        print(f"{log_prefix} Decision: No checks found for the phase. Routing to format_output.")
+        # Send message only if ID exists
+        if conversation_id:
+            await send_message(conversation_id, "Decision: No checks found for the phase. Routing to format_output.")
         return "format_output"
 
-    await broadcast_message(f"Decision: {len(checks)} checks found. Routing to analyze_checks_map.")
+    print(f"{log_prefix} Decision: {len(checks)} checks found. Routing to analyze_checks_map.")
+    # Send message only if ID exists
+    if conversation_id:
+        await send_message(conversation_id, f"Decision: {len(checks)} checks found. Routing to analyze_checks_map.")
     return "analyze_checks_map"
 
 # Build and configure the LangGraph

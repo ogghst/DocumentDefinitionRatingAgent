@@ -1,0 +1,98 @@
+Failed to generate PDF report.
+JSON source: C:\Users\muratori.n\AppData\Local\Temp\tmp1e741ii9\valid_data.json
+Error: Simulated ReportLab build error
+
+--- Results Data (first 5) ---
+[
+  {
+    "check_item": {
+      "id": "CHK001",
+      "name": "Initial Setup Verification",
+      "description": "Verify the initial system configuration.",
+      "phase": "Setup",
+      "branch_name": "Configuration",
+      "branch_id": "B01"
+    },
+    "is_met": true,
+    "reliability": 95,
+    "needs_human_review": false,
+    "analysis_details": "Configuration files match the expected template.",
+    "sources": [
+      "/path/to/config.yaml",
+      "System logs entry A"
+    ],
+    "user_input": null
+  },
+  {
+    "check_item": {
+      "id": "CHK002",
+      "name": "Dependency Check",
+      "description": "Ensure all required dependencies are installed.",
+      "phase": "Setup",
+      "branch_name": "Dependencies",
+      "branch_id": "B02"
+    },
+    "is_met": false,
+    "reliability": 75,
+    "needs_human_review": true,
+    "analysis_details": "Package 'libfoo' version mismatch. Found 1.2, expected 1.3+.",
+    "sources": [
+      "Package manager query output"
+    ],
+    "user_input": "User provided info: Waiting for manual update of libfoo."
+  },
+  {
+    "check_item": {
+      "id": "CHK003",
+      "name": "Network Connectivity",
+      "description": "Test connection to external services.",
+      "phase": "Setup",
+      "branch_name": "Networking",
+      "branch_id": "B03"
+    },
+    "is_met": true,
+    "reliability": 88,
+    "needs_human_review": false,
+    "analysis_details": "Successfully pinged service X and Y.",
+    "sources": [
+      "Ping results log"
+    ],
+    "user_input": "1"
+  },
+  {
+    "check_item": {
+      "id": "CHK004",
+      "name": "Security Scan",
+      "description": "Run basic security vulnerability scan.",
+      "phase": "Security",
+      "branch_name": "Vulnerabilities",
+      "branch_id": "B04"
+    },
+    "is_met": false,
+    "reliability": 40,
+    "needs_human_review": true,
+    "analysis_details": "Scan tool reported low confidence potential issue.",
+    "sources": [
+      "scan_report.txt"
+    ],
+    "user_input": "skip"
+  },
+  {
+    "check_item": {
+      "id": "CHK005",
+      "name": "Performance Baseline",
+      "description": "Check baseline performance metrics.",
+      "phase": "Performance",
+      "branch_name": "Configuration",
+      "branch_id": "B01"
+    },
+    "is_met": true,
+    "reliability": 65,
+    "needs_human_review": false,
+    "analysis_details": "CPU and memory usage within normal range.",
+    "sources": [
+      "perf_metrics.csv"
+    ],
+    "user_input": null
+  }
+]

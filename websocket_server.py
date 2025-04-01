@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 # Import from common module instead
-from common import broadcast_message, get_user_input, active_connections_var, queue_message
+from common import send_message, get_user_input, active_connections_var, queue_message
 from websocket_callbacks import WebsocketCallbackManager  # Add this import
 
 # RAG imports - IMPORTANT: only import these when needed to avoid circular import
@@ -251,7 +251,29 @@ async def run_rag_workflow(conversation_id: str, background_tasks: BackgroundTas
             await conversation.owner_connection.send_text(json.dumps(warning_message))
     except Exception as e:
         print(f"Error running RAG workflow: {str(e)}")
+
+        # --- Add full traceback for the original error ---
+        import traceback
+        traceback.print_exc()
+        # --- End Add full traceback ---
+
+        # --- Simple DEBUG --- 
+        try:
+            # Use conversation_id directly as it should be in scope
+            print(f"[DEBUG] In except block, conversation_id = {conversation_id}")
+            print(f"[DEBUG] In except block, type(conversations) = {type(conversations)}") 
+        except NameError:
+            # This shouldn't happen if conversation_id is a function argument
+            print("[DEBUG] In except block, conversation_id is indeed undefined!")
+        except Exception as debug_e:
+            print(f"[DEBUG] Error during debug check: {debug_e}")
+        # --- END DEBUG ---
+        
+        # Ensure conversation_id is defined here before trying to use it
+        # It should be available from the function argument
+        
         # Try to send error message if we have a valid connection
+        # Use conversation_id directly
         if conversation_id in conversations and conversations[conversation_id].owner_connection:
             try:
                 error_message = {
@@ -264,131 +286,18 @@ async def run_rag_workflow(conversation_id: str, background_tasks: BackgroundTas
                 print(f"Error sending error message: {send_error}")
     finally:
         # Mark conversation as inactive
+        # conversation_id is a function arg, should always be defined
         if conversation_id in conversations:
             conversations[conversation_id].is_active = False
         
         # Deactivate and clean up callback manager
+        # conversation_id is a function arg, should always be defined
         if conversation_id in conversation_callbacks:
             conversation_callbacks[conversation_id].deactivate()
             conversation_callbacks.pop(conversation_id, None)
 
 # Update get_user_input to use the callback manager if available
-async def get_user_input(conversation_id: str, prompt: str) -> str:
-    """Get input from the owner of a conversation.
-    
-    This function sends a prompt to the conversation owner and waits for a response.
-    The RAG workflow will pause here until a response is received or the timeout occurs.
-    """
-    # If we have a callback manager for this conversation, use it
-    if conversation_id in conversation_callbacks:
-        return await conversation_callbacks[conversation_id].get_user_input(prompt)
-    
-    # Otherwise, fall back to the original implementation
-    if conversation_id not in conversations:
-        print(f"Conversation {conversation_id} not found")
-        return "skip"
-    
-    conv = conversations[conversation_id]
-    
-    if not conv.owner_connection:
-        print(f"No owner connection for conversation {conversation_id}")
-        return "skip"
-    
-    # First, notify the client that we're pausing for input
-    await send_message(
-        conversation_id, 
-        "RAG analysis paused: Waiting for human input...", 
-        "rag_progress", 
-        rag_message=True
-    )
-    
-    # Send prompt to the owner only
-    await send_message(conversation_id, prompt, "input_request", rag_message=True)
-    
-    # Create an event to wait for the response
-    input_received = asyncio.Event()
-    user_response = ["skip"]  # Use list for mutable reference
-    
-    # Set up a response handler
-    async def handle_owner_message(websocket: WebSocket):
-        try:
-            # Wait for a message from the owner
-            message = await websocket.receive_text()
-            print(f"Received response from owner of conversation {conversation_id}: {message[:50]}...")
-            
-            try:
-                # Try to parse as JSON
-                data = json.loads(message)
-                if isinstance(data, dict) and "content" in data:
-                    user_response[0] = data["content"]
-                    print(f"Parsed input response content: {data['content'][:50]}...")
-                else:
-                    user_response[0] = message
-                    print(f"Using message as is: {message[:50]}...")
-            except json.JSONDecodeError:
-                user_response[0] = message
-                print(f"Using raw message as response: {message[:50]}...")
-            
-            # Signal that we've received input
-            input_received.set()
-        except WebSocketDisconnect:
-            # Owner disconnected
-            print(f"Owner disconnected while waiting for input in conversation {conversation_id}")
-            input_received.set()  # Signal to continue with default
-        except Exception as e:
-            # Other error
-            print(f"Error receiving owner message: {e}")
-            input_received.set()  # Signal to continue with default
-    
-    # Start listening for the owner's response
-    task = asyncio.create_task(handle_owner_message(conv.owner_connection))
-    task.set_name(f"wait_for_input_{conversation_id}")
-    
-    # Notify user we're waiting for input
-    print(f"Waiting for human input in conversation {conversation_id}...")
-    
-    try:
-        # Wait for the response with a timeout
-        await asyncio.wait_for(input_received.wait(), timeout=120)  # 2-minute timeout
-        
-        # Notify that input was received
-        if user_response[0] != "skip":
-            await send_message(
-                conversation_id, 
-                "Input received. Resuming RAG analysis...", 
-                "rag_progress", 
-                rag_message=True
-            )
-            print(f"Human input received: {user_response[0][:50]}...")
-        else:
-            await send_message(
-                conversation_id, 
-                "Input skipped. Resuming RAG analysis...", 
-                "rag_progress", 
-                rag_message=True
-            )
-            print("Human input skipped.")
-        
-        # Return the response
-        return user_response[0]
-    except asyncio.TimeoutError:
-        # Timeout occurred
-        print(f"Timeout waiting for human input in conversation {conversation_id}")
-        await send_message(
-            conversation_id, 
-            "Timeout waiting for input. Resuming RAG analysis...", 
-            "rag_progress", 
-            rag_message=True
-        )
-        return "skip"
-    finally:
-        # Clean up the task if it's still running
-        if not task.done():
-            task.cancel()
-            try:
-                await task
-            except asyncio.CancelledError:
-                pass
+# This function is defined in common.py now, removing the duplicate definition here.
 
 # ---- API Routes ----
 @app.get("/")

@@ -77,7 +77,7 @@
         }
         
         .container {
-            max-width: 800px; /* Narrower for minimalist */
+            max-width: 1200px; /* Narrower for minimalist */
             width: 100%;
             margin: 20px auto;
             padding: 0; /* Remove padding, handled by sections */
@@ -125,7 +125,7 @@
         
         /* Minimalist Message Area */
         #messages {
-            height: 60vh; /* Relative height */
+            height: 80vh; /* Relative height */
             overflow-y: scroll;
             margin-bottom: 20px;
             padding: 10px; /* Minimal padding */
@@ -469,6 +469,40 @@
         
         .message {
             animation: fadeIn 0.3s ease-out;
+        }
+        
+        /* Styling for Check Start message table */
+        .check-details-table {
+            width: 100%;
+            margin-top: 8px;
+            border-collapse: collapse;
+            font-size: 0.9em;
+            border: 1px solid var(--border-color);
+            background-color: var(--bg-color); /* Match card bg */
+            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+        }
+        
+        .check-details-table th,
+        .check-details-table td {
+            text-align: left;
+            padding: 6px 10px;
+            border-bottom: 1px solid var(--border-color);
+        }
+        
+        .check-details-table th {
+            font-weight: 600;
+            width: 100px; /* Fixed width for labels */
+            background-color: var(--message-ai-bg); /* Match AI message header */
+            color: var(--secondary-color);
+        }
+        
+        .check-details-table td {
+            word-break: break-word;
+        }
+        
+        .check-details-table tr:last-child th,
+        .check-details-table tr:last-child td {
+            border-bottom: none;
         }
     </style>
 </head>
@@ -908,23 +942,6 @@
              }
         }
         
-        // Send a message
-        function sendMessage() {
-            if (!socket || socket.readyState !== WebSocket.OPEN) return;
-            
-            const input = document.getElementById('message-input');
-            const content = input.value.trim();
-            if (!content) return;
-            
-            // Send as JSON with type
-            socket.send(JSON.stringify({
-                type: 'user',
-                content: content
-            }));
-            
-            input.value = '';
-        }
-        
         // Display a parsed JSON message
         function displayMessage(message) {
             const div = document.createElement('div');
@@ -932,7 +949,7 @@
             
             // Add type-specific classes
             if (message.type) {
-                div.classList.add(message.type);
+                div.classList.add(message.type.toLowerCase()); 
             }
             
             // For user messages, use a different style
@@ -944,34 +961,140 @@
                 div.appendChild(contentDiv);
             } else {
                 // Create type label for non-user messages
-            const typeSpan = document.createElement('span');
-            typeSpan.className = 'message-type';
-                typeSpan.textContent = message.type || 'unknown';
+                const typeSpan = document.createElement('span');
+                typeSpan.className = 'message-type';
+                // Display type nicely (e.g., rag_progress -> RAG Progress)
+                typeSpan.textContent = (message.type || 'unknown').replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+                div.appendChild(typeSpan);
             
-            // Create content container
-            const contentContainer = document.createElement('div');
+                // Create content container
+                const contentContainer = document.createElement('div');
             
-            // Handle different content types
-            if (message.type === 'RAG_RESULT') {
-                 // Try to parse and pretty-print JSON for RAG_RESULT
-                 try {
-                     const parsedJson = JSON.parse(message.content);
-                     const pre = document.createElement('pre');
-                     const code = document.createElement('code');
-                     code.textContent = JSON.stringify(parsedJson, null, 2); // Indent with 2 spaces
-                     pre.appendChild(code);
-                     contentContainer.appendChild(pre);
-                 } catch (e) {
-                     // If parsing fails, display as markdown (which might contain think tags)
-                     console.warn("RAG_RESULT content was not valid JSON, rendering as markdown:", message.content);
+                // Handle different content types
+                if (message.type === 'check_start') {
+                    try {
+                        const checkData = JSON.parse(message.content);
+                        const table = document.createElement('table');
+                        table.className = 'check-details-table';
+                        
+                        // Define order and labels
+                        const fieldsToShow = [
+                            { key: 'id', label: 'ID' },
+                            { key: 'name', label: 'Name' },
+                            { key: 'description', label: 'Description' },
+                            { key: 'branch_name', label: 'Branch' },
+                            { key: 'weight', label: 'Weight' },
+                            { key: 'phase', label: 'Phase' },
+                        ];
+                        
+                        fieldsToShow.forEach(field => {
+                            if (checkData.hasOwnProperty(field.key)) {
+                                const row = table.insertRow();
+                                const th = document.createElement('th');
+                                const td = document.createElement('td');
+                                th.textContent = field.label;
+                                // Render description as markdown if it's the description field
+                                if (field.key === 'description') {
+                                    td.innerHTML = md.render(checkData[field.key]);
+                                } else {
+                                    td.textContent = checkData[field.key];
+                                }
+                                row.appendChild(th);
+                                row.appendChild(td);
+                            }
+                        });
+                        contentContainer.appendChild(table);
+                        
+                    } catch (e) {
+                        console.error("Error parsing check_start content:", e);
+                        // Fallback to rendering raw content if parsing fails
+                        renderMarkdownWithReasoning(message.content, contentContainer);
+                    }
+                } else if (message.type === 'RAG_RESULT') {
+                     // Try to parse and pretty-print JSON for RAG_RESULT
+                     try {
+                         const parsedJson = JSON.parse(message.content);
+                         
+                         // Create a container for all check results
+                         const resultsContainer = document.createElement('div');
+                         resultsContainer.className = 'check-results-container';
+                         
+                         // Handle both single result and array of results
+                         const results = Array.isArray(parsedJson) ? parsedJson : [parsedJson];
+                         
+                         results.forEach(result => {
+                             // Create a box for each check result
+                             const resultBox = document.createElement('div');
+                             resultBox.className = 'check-result-box';
+                             
+                             // Create table for structured display
+                             const table = document.createElement('table');
+                             table.className = 'check-result-table';
+                             
+                             // Add rows for each CheckResult field
+                             const fields = [
+                                 { label: 'Check ID', value: result.check_item?.id || 'N/A' },
+                                 { label: 'Check Name', value: result.check_item?.name || 'N/A' },
+                                 { label: 'Status', value: result.is_met ? 'Met' : 'Not Met' },
+                                 { label: 'Reliability', value: `${result.reliability}%` },
+                                 { label: 'Human Review', value: result.needs_human_review ? 'Required' : 'Not Required' },
+                                 { label: 'User Input', value: result.user_input || 'None' }
+                             ];
+                             
+                             fields.forEach(field => {
+                                 const row = table.insertRow();
+                                 const labelCell = row.insertCell(0);
+                                 const valueCell = row.insertCell(1);
+                                 
+                                 labelCell.className = 'field-label';
+                                 valueCell.className = 'field-value';
+                                 
+                                 labelCell.textContent = field.label;
+                                 valueCell.textContent = field.value;
+                             });
+                             
+                             // Add analysis details if present
+                             if (result.analysis_details) {
+                                 const detailsRow = table.insertRow();
+                                 const detailsCell = detailsRow.insertCell(0);
+                                 detailsCell.colSpan = 2;
+                                 detailsCell.className = 'analysis-details';
+                                 detailsCell.innerHTML = md.render(result.analysis_details);
+                             }
+                             
+                             // Add sources if present
+                             if (result.sources && result.sources.length > 0) {
+                                 const sourcesRow = table.insertRow();
+                                 const sourcesCell = sourcesRow.insertCell(0);
+                                 sourcesCell.colSpan = 2;
+                                 sourcesCell.className = 'sources';
+                                 
+                                 const sourcesList = document.createElement('ul');
+                                 result.sources.forEach(source => {
+                                     const li = document.createElement('li');
+                                     li.textContent = source;
+                                     sourcesList.appendChild(li);
+                                 });
+                                 sourcesCell.appendChild(sourcesList);
+                             }
+                             
+                             resultBox.appendChild(table);
+                             resultsContainer.appendChild(resultBox);
+                         });
+                         
+                         contentContainer.appendChild(resultsContainer);
+                         
+                     } catch (e) {
+                         // If parsing fails, display as markdown (which might contain think tags)
+                         console.warn("RAG_RESULT content was not valid JSON, rendering as markdown:", message.content);
+                         renderMarkdownWithReasoning(message.content, contentContainer); 
+                     }
+                } else if (typeof message.content === 'string') {
+                     // Process other string content for <think> tags (non-streaming)
                      renderMarkdownWithReasoning(message.content, contentContainer); 
-                 }
-            } else if (typeof message.content === 'string') {
-                 // Process other string content for <think> tags (non-streaming)
-                 renderMarkdownWithReasoning(message.content, contentContainer); 
-            } else { // If content is not a string (e.g., object for errors sometimes)
-                contentContainer.innerHTML = '<pre>' + JSON.stringify(message.content, null, 2) + '</pre>';
-            }
+                } else { // If content is not a string (e.g., object for errors sometimes)
+                    contentContainer.innerHTML = '<pre>' + JSON.stringify(message.content, null, 2) + '</pre>';
+                }
                 
                 div.appendChild(typeSpan);
                 div.appendChild(contentContainer); 
@@ -1059,24 +1182,80 @@
         function showInputRequestForm(message) {
             // Display the input form
             inputResponseForm.style.display = 'block';
-            
-            // Set a clear prompt
-            const promptElement = document.createElement('div');
-            promptElement.className = 'markdown-content';
-            
-            // Render the prompt message as markdown (no <think> tags expected here)
-            promptElement.innerHTML = md.render(message) + 
-                '<p><em>You can use Markdown formatting in your response</em></p>';
-            
-            // Get the input-prompt element
+
+            // --- Edit Start: Improved Prompt Rendering ---
+            // Get the input-prompt element and clear it
             const inputPromptElement = inputResponseForm.querySelector('.input-prompt');
-            
-            // Clear any previous content
-            inputPromptElement.innerHTML = '';
-            
-            // Add the new prompt to the input-prompt div
-            inputPromptElement.appendChild(promptElement);
-            
+            inputPromptElement.innerHTML = ''; // Clear previous content
+
+            // Create a container for the prompt content
+            const promptContainer = document.createElement('div');
+            promptContainer.className = 'markdown-content'; // Use markdown styling
+
+            // Render the prompt, making <think> tags collapsible
+            const reasoningRegex = /<think>([\s\S]*?)<\/think>/g;
+            let lastIndex = 0;
+            let match;
+
+            while ((match = reasoningRegex.exec(message)) !== null) {
+                // Add content before the tag as markdown
+                if (match.index > lastIndex) {
+                    const markdownPart = message.substring(lastIndex, match.index);
+                    const markdownDiv = document.createElement('div');
+                    // Render normal markdown - no extra bolding applied here by default
+                    markdownDiv.innerHTML = md.render(markdownPart.trim());
+                    promptContainer.appendChild(markdownDiv);
+                }
+
+                // Add the reasoning block within a collapsible <details> tag
+                const reasoningContent = match[1];
+                const detailsElement = document.createElement('details');
+                detailsElement.style.marginTop = '10px'; // Add some spacing
+                detailsElement.style.marginBottom = '10px';
+
+                const summaryElement = document.createElement('summary');
+                summaryElement.textContent = 'Show Reasoning'; // Clickable text
+                summaryElement.style.cursor = 'pointer';
+                summaryElement.style.fontWeight = '500'; // Slightly bolder summary
+                summaryElement.style.color = 'var(--secondary-color)';
+
+                const reasoningDiv = document.createElement('div');
+                reasoningDiv.className = 'reasoning-block'; // Reuse existing reasoning style
+                reasoningDiv.style.marginTop = '5px'; // Space below summary
+                reasoningDiv.innerHTML = md.render(reasoningContent.trim()); // Render markdown inside
+
+                detailsElement.appendChild(summaryElement);
+                detailsElement.appendChild(reasoningDiv);
+                promptContainer.appendChild(detailsElement);
+
+                lastIndex = reasoningRegex.lastIndex;
+            }
+
+            // Add any remaining content after the last tag as markdown
+            if (lastIndex < message.length) {
+                const markdownPart = message.substring(lastIndex);
+                const markdownDiv = document.createElement('div');
+                 // Render normal markdown
+                markdownDiv.innerHTML = md.render(markdownPart.trim());
+                promptContainer.appendChild(markdownDiv);
+            }
+
+             // Handle cases where the entire content might be empty or just tags
+             if (promptContainer.innerHTML.trim() === '') {
+                 promptContainer.innerHTML = '<em>(Empty prompt)</em>';
+             }
+
+            // Add the rendered prompt content to the input-prompt div
+            inputPromptElement.appendChild(promptContainer);
+
+            // Add the note about Markdown formatting separately
+             const markdownHintPara = document.createElement('p');
+             markdownHintPara.innerHTML = '<em>You can use Markdown formatting in your response.</em>';
+             markdownHintPara.style.fontSize = '0.9em';
+             markdownHintPara.style.color = 'var(--text-light)';
+             inputPromptElement.appendChild(markdownHintPara);
+             // --- Edit End ---
+
             // Focus the textarea for input
             responseInput.focus();
             

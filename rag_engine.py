@@ -29,7 +29,7 @@ You are a meticulous Project Compliance Analyst. Your task is to analyze the pro
 {additional_info}
 
 **Analysis Instructions:**
-1. First, carefully understand the checklist item description. This is what you need to verify from the document.
+1. First, carefully understand the checklist item name and description. This is what you need to verify from the document.
 2. Search the Document Context for evidence related to this specific checklist item.
 3. Determine if the checklist item is met based ONLY on the evidence in the document:
    - If there is clear evidence confirming the item is met, set is_met to true
@@ -113,35 +113,6 @@ def create_rag_chain():
     
     return rag_chain
 
-def create_streaming_chain():
-    """Create a streaming-only chain for token visibility."""
-    # Create a custom format instruction that's simpler
-    simple_format_instructions = """
-{
-  "is_met": bool,  // true if the check item is met, false otherwise
-  "reliability": int,  // 0-100 confidence score
-  "sources": [string],  // List of quotes from the document that support your determination
-  "analysis_details": string  // Your reasoning
-}
-"""
-
-    analysis_prompt = PromptTemplate(
-        template=analysis_prompt_template,
-        input_variables=["check_id", "check_name", "check_description", "context", "additional_info"],
-        partial_variables={"format_instructions": simple_format_instructions}
-    )
-    
-    # This chain only includes prompt + LLM without parsing
-    # Streaming happens via the callback manager provided in the RunnableConfig
-    streaming_chain = (
-        RunnablePassthrough.assign(
-            context=lambda x: format_docs(x["retriever"].invoke(x["check_description"]))
-        )
-        | analysis_prompt
-        | llm  # Don't use with_config here, let the config be passed in directly
-    )
-    
-    return streaming_chain
 
 def create_hybrid_rag_chain():
     """Create a RAG chain that provides both streaming and structured output."""

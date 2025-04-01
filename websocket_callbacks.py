@@ -1,12 +1,13 @@
 import asyncio
 import json
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Callable, Coroutine
 from uuid import UUID
 
 from langchain_core.callbacks.base import BaseCallbackHandler, AsyncCallbackHandler
 from langchain_core.outputs import LLMResult
-from fastapi import WebSocket
+# Remove WebSocket import as it's no longer managed here
+# from fastapi import WebSocket
 
 # Import necessary functions without creating circular imports
 # These will be imported when the file is used
@@ -19,27 +20,39 @@ class WebsocketCallbackManager(AsyncCallbackHandler):
     A callback manager that handles websocket communication for LLM streaming tokens and user feedback.
     
     This class provides a unified interface for:
-    - Streaming tokens to clients via websockets
-    - Collecting user feedback during LLM runs
-    - Broadcasting status updates to clients
+    - Streaming tokens to clients via websockets (using a callback)
+    - Collecting user feedback during LLM runs (using a callback)
+    - Broadcasting status updates to clients (using a callback)
     """
     
-    def __init__(self, conversation_id: str, websocket: Optional[WebSocket] = None):
+    def __init__(self,
+                 conversation_id: str,
+                 send_callback: Callable[[str, str], Coroutine[Any, Any, None]],
+                 request_input_callback: Callable[[str], Coroutine[Any, Any, str]]):
         """
         Initialize the callback manager.
         
         Args:
             conversation_id: The ID of the conversation this manager is handling
-            websocket: Direct reference to the websocket connection (owner)
+            send_callback: An async function to call for sending messages.
+                         Expected signature: send_callback(message_content: str, message_type: str)
+            request_input_callback: An async function to call for requesting user input.
+                                  Expected signature: request_input_callback(prompt: str) -> str
         """
         self.conversation_id = conversation_id
-        self.websocket = websocket  # Store direct reference to owner websocket
-        self.loop = asyncio.get_event_loop()
-        self.waiting_for_input = False
-        self.user_input_event = asyncio.Event()
-        self.user_response = [""]  # Use list for mutable reference
+        # Remove direct websocket reference
+        # self.websocket = websocket
+        self.send_callback = send_callback
+        self.request_input_callback = request_input_callback
+        
+        # self.loop = asyncio.get_event_loop() # loop is not explicitly needed
+        # Input handling state is removed - managed by websocket_server now
+        # self.waiting_for_input = False
+        # self.user_input_event = asyncio.Event()
+        # self.user_response = [""]
+        
         self._token_buffer = []
-        self._max_buffer_size = 10  # Number of tokens to buffer before sending
+        self._max_buffer_size = 1  # Number of tokens to buffer before sending
         self._active = True  # Flag to track if this callback manager is still active
         
         # Add LangChain callback manager compatibility attributes
@@ -55,24 +68,29 @@ class WebsocketCallbackManager(AsyncCallbackHandler):
         
         super().__init__()
     
-    def set_websocket(self, websocket: WebSocket):
-        """Set or update the websocket connection for this callback manager."""
-        self.websocket = websocket
+    # Remove set_websocket method
+    # def set_websocket(self, websocket: WebSocket):
+    #     """Set or update the websocket connection for this callback manager."""
+    #     self.websocket = websocket
     
     def deactivate(self):
         """Mark this callback manager as inactive."""
         self._active = False
-        # Clear any pending events
-        if not self.user_input_event.is_set():
-            self.user_input_event.set()
+        # Clear any pending events (input logic moved)
+        # if not self.user_input_event.is_set():
+        #     self.user_input_event.set()
     
     def copy(self):
         """Return a copy of this callback manager.
         
         Required by LangChain's ensure_config function when used in RunnableConfig.
         """
-        # Create a new instance with the same conversation_id
-        new_manager = WebsocketCallbackManager(self.conversation_id, self.websocket)
+        # Create a new instance with the same conversation_id and callbacks
+        new_manager = WebsocketCallbackManager(
+            self.conversation_id,
+            self.send_callback, 
+            self.request_input_callback
+        )
         
         # Copy over the necessary attributes for LangChain compatibility
         new_manager.parent_run_id = self.parent_run_id
@@ -81,59 +99,35 @@ class WebsocketCallbackManager(AsyncCallbackHandler):
         new_manager.metadata = self.metadata.copy() if self.metadata else {}
         new_manager.inheritable_metadata = self.inheritable_metadata.copy() if self.inheritable_metadata else {}
         new_manager.handlers = self.handlers.copy() if self.handlers else []
+        new_manager._active = self._active # Copy active status
         
         return new_manager
     
+    # --- LangChain Compatibility Methods (unchanged) ---
     def get_parent_run_id(self):
-        """Get the parent run ID for this callback manager.
-        
-        Used by LangChain's callback system.
-        """
         return self.parent_run_id
-    
     def get_tags(self):
-        """Get tags for this callback manager.
-        
-        Used by LangChain's callback system.
-        """
         return self.tags.copy() if self.tags else []
-    
     def get_inheritable_tags(self):
-        """Get inheritable tags for this callback manager.
-        
-        Used by LangChain's callback system.
-        """
         return self.inheritable_tags.copy() if self.inheritable_tags else []
-    
     def get_metadata(self):
-        """Get metadata for this callback manager.
-        
-        Used by LangChain's callback system.
-        """
         return self.metadata.copy() if self.metadata else {}
-    
     def get_inheritable_metadata(self):
-        """Get inheritable metadata for this callback manager.
-        
-        Used by LangChain's callback system.
-        """
         return self.inheritable_metadata.copy() if self.inheritable_metadata else {}
+    # --- End LangChain Compatibility Methods ---
     
     async def _send_message(self, content: str, message_type: str = "rag_progress"):
-        """Send a message directly to the websocket if it exists."""
-        if not self._active or not self.websocket:
+        """Send a message using the provided send_callback."""
+        if not self._active:
             return
             
         try:
-            message_data = {
-                "type": message_type,
-                "content": content,
-                "timestamp": datetime.now().isoformat()
-            }
-            await self.websocket.send_text(json.dumps(message_data))
+            # Call the callback function provided during initialization
+            await self.send_callback(content, message_type)
         except Exception as e:
-            print(f"Error sending message to websocket: {e}")
-            self._active = False  # Mark as inactive if sending fails
+            print(f"Error calling send_callback in manager for {self.conversation_id}: {e}")
+            # Consider deactivating on persistent send errors
+            # self._active = False 
     
     async def _send_buffered_tokens(self):
         """Send buffered tokens if any exist."""
@@ -144,10 +138,10 @@ class WebsocketCallbackManager(AsyncCallbackHandler):
         joined_tokens = "".join(self._token_buffer)
         self._token_buffer = []
         
-        # Send directly to websocket
+        # Send using the callback
         await self._send_message(joined_tokens, "rag_token")
     
-    # ---- LLM Callbacks ----
+    # ---- LLM Callbacks (use _send_message) ----
     
     async def on_llm_start(self, serialized: Dict[str, Any], prompts: List[str], **kwargs: Any) -> None:
         """Run when LLM starts."""
@@ -157,7 +151,7 @@ class WebsocketCallbackManager(AsyncCallbackHandler):
         
         llm_name = serialized.get("name", "LLM")
         await self._send_message(
-            f"{llm_name} starting to generate...", 
+            f"Asking to AI...", 
             "rag_progress"
         )
         
@@ -183,7 +177,7 @@ class WebsocketCallbackManager(AsyncCallbackHandler):
         # Add optional completion message
         if response is not None:
             await self._send_message(
-                "Generation completed",
+                "AI replied to the question",
                 "rag_progress"
             )
     
@@ -200,34 +194,25 @@ class WebsocketCallbackManager(AsyncCallbackHandler):
                 error_msg = type(error).__name__
                 
         await self._send_message(
-            f"Error during LLM generation: {error_msg}",
+            f"Error during AI analysis: {error_msg}",
             "error"
         )
     
-    # ---- Chain Callbacks ----
+    # ---- Chain Callbacks (use _send_message, logic mostly unchanged) ----
     
     async def on_chain_start(self, serialized: Dict[str, Any], inputs: Dict[str, Any], **kwargs: Any) -> None:
         """Run when chain starts."""
-        # Check if serialized is None and provide a default value
         chain_type = "Chain"
         if serialized is not None and isinstance(serialized, dict):
             chain_type = serialized.get("name", "Chain")
-        
-        # Not sending message to avoid noise
-        pass
+        # Pass (no message sent)
     
     async def on_chain_end(self, outputs: Dict[str, Any], **kwargs: Any) -> None:
         """Run when chain ends."""
-        # Protect against None parameters
-        if not isinstance(outputs, dict):
-            outputs = {}
-            
-        # Not sending message to avoid noise
-        pass
+        # Pass (no message sent)
     
     async def on_chain_error(self, error: Exception, **kwargs: Any) -> None:
         """Run when chain errors."""
-        # Make sure error is properly formatted
         error_msg = "Unknown error"
         if error is not None:
             try:
@@ -242,12 +227,6 @@ class WebsocketCallbackManager(AsyncCallbackHandler):
     
     async def on_tool_end(self, output: str, **kwargs: Any) -> None:
         """Run on tool end."""
-        # Make sure output is a string
-        if output is None:
-            output = "No output"
-        elif not isinstance(output, str):
-            output = str(output)
-            
         await self._send_message(
             f"Tool completed", 
             "rag_progress"
@@ -255,115 +234,69 @@ class WebsocketCallbackManager(AsyncCallbackHandler):
     
     async def on_text(self, text: str, **kwargs: Any) -> None:
         """Run on text."""
-        # Make sure text is a string
         if text is None:
-            return  # Skip sending None text
+            return
         elif not isinstance(text, str):
             try:
                 text = str(text)
             except:
-                return  # Skip if we can't convert to string
+                return
                 
         await self._send_message(
             text,
             "rag_progress"
         )
     
-    # ---- User Input Methods ----
+    # ---- User Input Methods (use request_input_callback) ----
     
     async def get_user_input(self, prompt: str) -> str:
         """
-        Get input from the user with the specified prompt.
+        Get input from the user with the specified prompt by calling the request_input_callback.
         
-        This is a blocking call that will wait for user input.
+        This is a blocking call that will wait for user input via the callback.
         """
-        if not self._active or not self.websocket:
-            print(f"Cannot get user input - websocket not available or manager inactive")
-            return "skip"
+        if not self._active:
+            print(f"Callback manager for {self.conversation_id} is inactive. Cannot request input.")
+            return "skip: manager inactive"
             
-        # Reset state
-        self.waiting_for_input = True
-        self.user_input_event.clear()
-        self.user_response[0] = ""
-        
-        # Notify client we're waiting for input
-        await self._send_message(
-            "RAG analysis paused: Waiting for human input...",
-            "rag_progress"
-        )
-        
-        # Send the prompt
-        await self._send_message(
-            prompt,
-            "input_request"
-        )
-        
         try:
-            # Wait for response with timeout
-            await asyncio.wait_for(self.user_input_event.wait(), timeout=300)  # 5 minute timeout
-            return self.user_response[0]
-        except asyncio.TimeoutError:
-            await self._send_message(
-                "Timeout waiting for user input. Proceeding with default.",
-                "warning"
-            )
-            return "timeout"
-        finally:
-            self.waiting_for_input = False
+            # Use the callback provided during initialization to request input
+            print(f"Callback manager {self.conversation_id} requesting input with prompt: {prompt}")
+            response = await self.request_input_callback(prompt)
+            print(f"Callback manager {self.conversation_id} received input: {response}")
+            return response
+        except Exception as e:
+            print(f"Error calling request_input_callback in manager {self.conversation_id}: {e}")
+            await self._send_message(f"Error requesting user input: {e}", "error")
+            return f"error: {e}"
     
-    def handle_user_message(self, message: str):
-        """
-        Handle a message from the user.
-        
-        If we're waiting for input, this will resolve the waiting.
-        """
-        if self.waiting_for_input:
-            try:
-                # Try to parse as JSON
-                data = json.loads(message)
-                if isinstance(data, dict) and "content" in data:
-                    self.user_response[0] = data["content"]
-                else:
-                    self.user_response[0] = message
-            except json.JSONDecodeError:
-                self.user_response[0] = message
-            
-            # Signal that we've received input
-            self.user_input_event.set()
+    # Remove handle_user_message - this is handled by the websocket endpoint now
+    # def handle_user_message(self, message: str):
+    #     """
+    #     Handle a message from the user.
+    #     
+    #     If we're waiting for input, this will resolve the waiting.
+    #     """
+    #     # ... (old logic removed)
     
+    # ---- Chat Model Callbacks (use _send_message, logic mostly unchanged) ----
     async def on_chat_model_start(
         self, serialized: Dict[str, Any], messages: List[List[Dict[str, Any]]], **kwargs: Any
     ) -> None:
         """Run when chat model starts generating."""
-        # Protect against None parameters
-        if not isinstance(serialized, dict):
-            serialized = {}
-        
-        model_name = serialized.get("name", "Chat Model")
-        await self._send_message(
-            f"{model_name} starting to generate...",
-            "rag_progress"
-        )
-        
         # Clear token buffer at the start of each model call
         self._token_buffer = []
+        # Pass (no message sent)
     
     async def on_chat_model_end(self, response: LLMResult, **kwargs: Any) -> None:
         """Run when chat model ends generation."""
         await self._send_buffered_tokens()
-        
-        # Add optional completion message
-        if response is not None:
-            await self._send_message(
-                "Generation completed",
-                "rag_progress"
-            )
+        # Pass (no message sent)
     
     async def on_chat_model_error(self, error: Exception, **kwargs: Any) -> None:
         """Run when chat model errors."""
         await self._send_buffered_tokens()  # Send any buffered tokens
         
-        # Make sure error is properly formatted
         error_msg = "Unknown error"
         if error is not None:
             try:

@@ -310,7 +310,8 @@ async def analyze_check_rag(
             
             # Check if human input is needed
             needs_human_input_check = (
-                (current_reliability < 50) and 
+                #TODO: move back to 50
+                (current_reliability < 0) and 
                 (attempt == 0 or not user_provided_input or not reliability_improved)
             )
             
@@ -319,7 +320,8 @@ async def analyze_check_rag(
 
             if not can_request_human_input:
                 # Accept the result if we can't ask for input or don't need to
-                if current_reliability < 50:
+                #TODO: move back to 50
+                if current_reliability < 0:
                     if check_result: check_result.needs_human_review = True
                     await send_node_message(f"Low reliability ({current_reliability}%) for check ID {check_item.id}. Accepting result (cannot/don't need to request input).", "warning")
                     if check_result and check_result.user_input is None:

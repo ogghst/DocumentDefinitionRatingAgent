@@ -1,4 +1,4 @@
-# RAG Conversation Server
+# Document Definition Rating Agent
 
 A WebSocket-based conversation server for Retrieval-Augmented Generation (RAG) analysis with human-in-the-loop functionality. This system analyzes documents against compliance checklists and seamlessly requests human input when needed.
 
@@ -16,17 +16,17 @@ This system enables real-time document analysis against structured checklists, w
 
 The application follows a modular architecture with these main components:
 
-┌──────────────┐      ┌──────────────┐      ┌──────────────┐
-│   Client     │◄────►│  WebSocket   │◄────►│ RAG Workflow │
-│  (Browser)   │      │    Server    │      │    Engine    │
-└──────────────┘      └──────────────┘      └──────────────┘
-                             ▲                     ▲
-                             │                     │
-                             ▼                     ▼
-                      ┌──────────────┐     ┌──────────────┐
-                      │ Conversation │     │   Document   │
-                      │  Management  │     │  Processing  │
-                      └──────────────┘     └──────────────┘
+        ┌──────────────┐      ┌──────────────┐      ┌──────────────┐
+        │   Client     │◄────►│  WebSocket   │◄────►│ RAG Workflow │
+        │  (Browser)   │      │    Server    │      │    Engine    │
+        └──────────────┘      └──────────────┘      └──────────────┘
+                                     ▲                     ▲
+                                     │                     │
+                                     ▼                     ▼
+                              ┌──────────────┐     ┌──────────────┐
+                              │ Conversation │     │   Document   │
+                              │  Management  │     │  Processing  │
+                              └──────────────┘     └──────────────┘
 
 ### Components
 
